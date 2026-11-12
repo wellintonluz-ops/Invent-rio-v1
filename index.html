@@ -83,6 +83,23 @@
 <body class="min-h-screen flex flex-col md:flex-row antialiased">
   <script>if (localStorage.getItem('tbx_menu_recolhido') === '1') document.body.classList.add('menu-recolhido');</script>
 
+  <!-- NUVEM: tela de login (Google @grupotbx.com.br) e avisos -->
+  <div id="nuvem-overlay" class="fixed inset-0 z-[200] bg-tbx-navy flex items-center justify-center p-6">
+    <div class="max-w-md w-full text-center text-white">
+      <div class="text-2xl font-extrabold tracking-widest">GRUPO TBX</div>
+      <div class="text-[11px] text-slate-400 mt-1 tracking-wider">PLATAFORMA DE INVENTÁRIO</div>
+      <div id="nuvem-spin" class="mt-8"><i class="fa-solid fa-circle-notch fa-spin text-2xl text-slate-300"></i></div>
+      <p id="nuvem-msg" class="text-sm mt-4 text-slate-300">Conectando à nuvem...</p>
+      <button id="nuvem-btn-login" class="hidden mt-6 bg-white hover:bg-slate-100 text-slate-800 font-bold px-6 py-3 rounded-lg shadow"><i class="fa-brands fa-google mr-2"></i> Entrar com Google</button>
+      <div class="mt-6 flex gap-3 justify-center">
+        <button id="nuvem-btn-tentar" class="hidden bg-white hover:bg-slate-100 text-slate-800 font-bold px-4 py-2 rounded-lg text-sm">Tentar de novo</button>
+        <button id="nuvem-btn-offline" class="hidden border border-slate-400 text-slate-200 hover:bg-white/10 font-semibold px-4 py-2 rounded-lg text-sm">Continuar sem nuvem</button>
+      </div>
+    </div>
+  </div>
+  <div id="nuvem-aviso" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[150] bg-amber-100 text-amber-900 border border-amber-300 rounded-xl shadow-lg px-4 py-2 text-xs font-semibold"><i class="fa-solid fa-cloud-arrow-down mr-1"></i><span id="nuvem-aviso-txt"></span></div>
+
+
   <!-- Navigation Sidebar -->
   <aside class="bg-tbx-navy text-white w-full md:w-64 flex-shrink-0 flex flex-col justify-between shadow-xl z-20">
     <div>
@@ -186,6 +203,8 @@
         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
       </div>
       <p class="text-[11px] text-slate-500">© Grupo TBX - Gestão TI</p>
+      <p id="nuvem-status" class="text-[11px] text-slate-400 mt-1">Nuvem: conectando...</p>
+      <div id="nuvem-bloco" class="hidden mt-1 flex items-center justify-between gap-2"><span id="nuvem-usuario" class="truncate text-[11px] text-slate-300"></span><button id="nuvem-btn-sair" class="text-[11px] underline text-slate-400 hover:text-white shrink-0">Sair</button></div>
     </div>
     </div>
   </aside>
@@ -1598,6 +1617,259 @@
     </div>
   </div>
 
+
+  <script>
+    /* NUVEM-INICIO */
+    // SALVAR NA NUVEM (Firebase / Firestore) com login Google restrito a @grupotbx.com.br.
+    // O app continua gravando no navegador (localStorage) como sempre; este bloco copia cada chave tbx_* para o Firestore e traz de volta o que outras pessoas mudarem.
+    // Cada chave vira 1 documento de controle (coleção "inventario": versão, nº de partes, quem/quando) + partes de texto (coleção "inventario_partes", até ~200 mil caracteres cada).
+    // Se duas pessoas alteram a mesma chave ao mesmo tempo, a versão acusa o conflito e os registros são mesclados por id (nada é descartado em silêncio).
+    (function () {
+      const CFG = {
+        apiKey: 'AIzaSyCNG5cn0XQemn8EFEGtP0zogP43LpEoSWM', authDomain: 'inventario-v1-be90e.firebaseapp.com', projectId: 'inventario-v1-be90e',
+        storageBucket: 'inventario-v1-be90e.firebasestorage.app', messagingSenderId: '78943181827', appId: '1:78943181827:web:cf6df7ad5be435ba020236', measurementId: 'G-K60M1MJ6BZ'
+      };
+      const SDK = 'https://www.gstatic.com/firebasejs/12.16.0/';
+      const DOMINIO = '@grupotbx.com.br', COL_META = 'inventario', COL_PARTES = 'inventario_partes', CHUNK = 200000;
+      // Fica só neste navegador (preferências, trava do inventário em andamento e a pessoa que está operando o MP.CHP).
+      const EXCLUIR = new Set(['tbx_inv_andamento', 'tbx_chp_resp', 'tbx_chp_sessao', 'tbx_menu_recolhido', 'tbx_lt_desligado', 'tbx_nuvem_estado']);
+      const sincronizavel = k => typeof k === 'string' && k.startsWith('tbx_') && !EXCLUIR.has(k);
+      const ehObj = x => x && typeof x === 'object' && !Array.isArray(x);
+
+      function hash(s) {            // identificador curto do texto (para saber se mudou desde o último envio)
+        s = s == null ? '\u0000nulo' : String(s);
+        let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+        for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36) + ':' + s.length;
+      }
+      function dividir(texto) { const p = []; for (let i = 0; i < texto.length; i += CHUNK) p.push(texto.slice(i, i + CHUNK)); return p.length ? p : ['']; }
+
+      // Mescla duas versões do mesmo valor: listas de registros com "id" viram a união (a versão local vence quando o id é o mesmo); objetos mesclam campo a campo.
+      function mesclarValor(L, R) {
+        if (Array.isArray(L) && Array.isArray(R)) {
+          const comId = a => a.length > 0 && a.every(x => ehObj(x) && x.id !== undefined);
+          if (comId(L) && comId(R)) {
+            const locais = new Map(L.map(x => [String(x.id), x])), vistos = new Set();
+            const out = R.map(x => { const k = String(x.id); vistos.add(k); return locais.has(k) ? locais.get(k) : x; });
+            L.forEach(x => { if (!vistos.has(String(x.id))) out.push(x); });
+            return out;
+          }
+          if (!L.length) return R; if (!R.length) return L;
+          const vistos = new Set(R.map(x => JSON.stringify(x)));
+          return R.concat(L.filter(x => !vistos.has(JSON.stringify(x))));
+        }
+        if (ehObj(L) && ehObj(R)) { const out = Object.assign({}, R); Object.keys(L).forEach(k => { out[k] = k in R ? mesclarValor(L[k], R[k]) : L[k]; }); return out; }
+        return L;
+      }
+      function mesclar(textoLocal, textoRemoto) {
+        try { return JSON.stringify(mesclarValor(JSON.parse(textoLocal), JSON.parse(textoRemoto))); } catch (e) { return textoLocal; }
+      }
+
+      const N = window.NUVEM = { hash, dividir, mesclar, sincronizavel, estado: {}, adapter: null, email: '', ocupado: false, pend: {}, ui: {} };
+      const lerEstado = () => { try { return JSON.parse(localStorage.getItem('tbx_nuvem_estado')) || {}; } catch (e) { return {}; } };
+      const salvarEstado = () => { try { localStorage.setItem('tbx_nuvem_estado', JSON.stringify(N.estado)); } catch (e) {} };
+      const ui = (nome, ...a) => { try { if (N.ui[nome]) return N.ui[nome](...a); } catch (e) { console.error(e); } };
+
+      // Primeira conciliação depois do login: sobe o que só existe aqui, baixa o que só existe lá e mescla o que mudou nos dois lados.
+      N.iniciar = async function (adapter, email) {
+        N.adapter = adapter; N.email = email; N.estado = lerEstado();
+        const metas = await adapter.listarMetas(), mapa = new Map(metas.map(m => [m.key, m]));
+        const locais = Object.keys(localStorage).filter(sincronizavel);
+        const todas = new Set([...locais, ...metas.filter(m => !m.apagado && sincronizavel(m.key)).map(m => m.key)]);
+        // Primeiro acesso deste navegador com dados dos dois lados: guarda uma cópia local antes de mesclar.
+        if (!Object.keys(N.estado).length && locais.length && metas.some(m => !m.apagado)) ui('copiaSeguranca');
+        let mudou = false;
+        for (const key of todas) {
+          const local = localStorage.getItem(key), m = mapa.get(key), e = N.estado[key];
+          const remotoExiste = m && !m.apagado;
+          if (!remotoExiste) {
+            if (local != null && local !== '') { const r = await adapter.gravar(key, local, m ? m.v : 0, email); N.estado[key] = { h: hash(r.texto), v: r.v }; if (r.texto !== local) { localStorage.setItem(key, r.texto); mudou = true; } }
+            else N.estado[key] = { h: hash(local), v: m ? m.v : 0 };
+            continue;
+          }
+          const remoto = await adapter.lerTexto(key, m.n);
+          if (local == null || local === '') { localStorage.setItem(key, remoto); N.estado[key] = { h: hash(remoto), v: m.v }; mudou = true; continue; }
+          if (local === remoto) { N.estado[key] = { h: hash(remoto), v: m.v }; continue; }
+          const pendente = e ? hash(local) !== e.h : true;
+          if (!pendente) { localStorage.setItem(key, remoto); N.estado[key] = { h: hash(remoto), v: m.v }; mudou = true; continue; }   // só a nuvem mudou
+          const mesclado = mesclar(local, remoto);
+          const r = mesclado !== remoto ? await adapter.gravar(key, mesclado, m.v, email) : { v: m.v, texto: remoto };
+          if (r.texto !== local) { localStorage.setItem(key, r.texto); mudou = true; }
+          N.estado[key] = { h: hash(r.texto), v: r.v };
+        }
+        salvarEstado();
+        if (mudou) ui('recarregar', 'Dados da nuvem carregados.');
+        return { mudou };
+      };
+
+      // Envia o que mudou neste navegador desde o último envio (chamada a cada poucos segundos).
+      N.varrer = async function () {
+        if (N.ocupado || !N.adapter) return;
+        N.ocupado = true; let mesclou = false;
+        try {
+          const chaves = new Set([...Object.keys(localStorage).filter(sincronizavel), ...Object.keys(N.estado).filter(sincronizavel)]);
+          for (const key of chaves) {
+            const cur = localStorage.getItem(key), h = hash(cur), e = N.estado[key];
+            if (e && e.h === h) { delete N.pend[key]; continue; }
+            if (!e && cur == null) continue;
+            if (N.pend[key] !== h) { N.pend[key] = h; continue; }          // só envia quando a mesma versão aparece em duas leituras seguidas (evita enviar no meio de uma gravação)
+            delete N.pend[key];
+            if (cur == null) { const r = await N.adapter.apagar(key, e ? e.v : 0, N.email); N.estado[key] = { h: hash(null), v: r.v }; }
+            else {
+              const r = await N.adapter.gravar(key, cur, e ? e.v : 0, N.email);
+              if (r.texto !== cur) { localStorage.setItem(key, r.texto); mesclou = true; }
+              N.estado[key] = { h: hash(r.texto), v: r.v };
+            }
+            salvarEstado();
+          }
+          ui('status', 'ok');
+        } catch (err) { ui('status', 'erro', err); }
+        finally { N.ocupado = false; }
+        if (mesclou) ui('recarregar', 'Os dados foram mesclados com alterações de outra pessoa.');
+      };
+
+      // Alguém mudou uma chave na nuvem: traz para cá (a menos que haja alteração local ainda não enviada: aí o próximo envio mescla).
+      N.aplicarRemoto = async function (m) {
+        if (!N.adapter || !sincronizavel(m.key)) return;
+        const e = N.estado[m.key];
+        if (e && m.v <= e.v) return;                                    // foi este próprio navegador que gravou
+        const local = localStorage.getItem(m.key);
+        const pendente = e ? hash(local) !== e.h : (local != null && local !== '');
+        if (pendente) return;
+        if (m.apagado) { localStorage.removeItem(m.key); N.estado[m.key] = { h: hash(null), v: m.v }; }
+        else { const remoto = await N.adapter.lerTexto(m.key, m.n); localStorage.setItem(m.key, remoto); N.estado[m.key] = { h: hash(remoto), v: m.v }; }
+        salvarEstado();
+        ui('recarregar', 'Dados atualizados por ' + (m.por || 'outra pessoa') + '.');
+      };
+
+      /* ---------- Firebase (login Google + Firestore) ---------- */
+      function criarAdapterFirebase(fb, db) {
+        const refMeta = k => fb.doc(db, COL_META, k), refParte = (k, i) => fb.doc(db, COL_PARTES, k + '~' + i);
+        const faixa = n => Array.from({ length: n }, (_, i) => i);
+        return {
+          async listarMetas() { const s = await fb.getDocs(fb.collection(db, COL_META)); return s.docs.map(d => { const x = d.data(); return { key: d.id, v: x.v || 0, n: x.n || 0, apagado: !!x.apagado, por: x.por || '' }; }); },
+          async lerTexto(key, n) { const p = await Promise.all(faixa(n).map(i => fb.getDoc(refParte(key, i)))); return p.map(d => (d.exists() ? d.data().t : '')).join(''); },
+          gravar(key, texto, baseV, por) {
+            return fb.runTransaction(db, async tx => {
+              const snap = await tx.get(refMeta(key)), m = snap.exists() ? snap.data() : null;
+              let final = texto, conflito = false;
+              if (m && m.v !== baseV) {
+                conflito = true;
+                if (!m.apagado && m.n > 0) { const ps = await Promise.all(faixa(m.n).map(i => tx.get(refParte(key, i)))); final = mesclar(texto, ps.map(d => (d.exists() ? d.data().t : '')).join('')); }
+              }
+              const partes = dividir(final), nAntigo = m && !m.apagado ? m.n : 0;
+              partes.forEach((t, i) => tx.set(refParte(key, i), { t }));
+              for (let i = partes.length; i < nAntigo; i++) tx.delete(refParte(key, i));
+              const v = (m ? m.v : 0) + 1;
+              tx.set(refMeta(key), { v, n: partes.length, apagado: false, por, em: fb.serverTimestamp() });
+              return { v, texto: final, conflito };
+            });
+          },
+          apagar(key, baseV, por) {
+            return fb.runTransaction(db, async tx => {
+              const snap = await tx.get(refMeta(key)), m = snap.exists() ? snap.data() : null;
+              for (let i = 0; m && !m.apagado && i < m.n; i++) tx.delete(refParte(key, i));
+              const v = (m ? m.v : 0) + 1;
+              tx.set(refMeta(key), { v, n: 0, apagado: true, por, em: fb.serverTimestamp() });
+              return { v };
+            });
+          },
+          ouvir(cb) {
+            return fb.onSnapshot(fb.collection(db, COL_META), snap => snap.docChanges().forEach(ch => {
+              if (ch.type === 'removed' || ch.doc.metadata.hasPendingWrites) return;
+              const x = ch.doc.data(); cb({ key: ch.doc.id, v: x.v || 0, n: x.n || 0, apagado: !!x.apagado, por: x.por || '' });
+            }));
+          }
+        };
+      }
+
+      const $ = id => document.getElementById(id);
+      const tela = (msg, { login = false, erro = false, offline = false } = {}) => {
+        const o = $('nuvem-overlay'); if (!o) return;
+        o.classList.remove('hidden'); $('nuvem-msg').innerText = msg;
+        $('nuvem-msg').className = 'text-sm mt-4 ' + (erro ? 'text-rose-300' : 'text-slate-300');
+        $('nuvem-btn-login').classList.toggle('hidden', !login);
+        $('nuvem-btn-tentar').classList.toggle('hidden', !offline);
+        $('nuvem-btn-offline').classList.toggle('hidden', !offline);
+        $('nuvem-spin').classList.toggle('hidden', login || offline || erro);
+      };
+      const esconderTela = () => { const o = $('nuvem-overlay'); if (o) o.classList.add('hidden'); };
+      const rodape = (txt, cor) => { const el = $('nuvem-status'); if (el) { el.innerText = txt; el.className = 'text-[11px] ' + (cor || 'text-slate-400'); } };
+
+      let recarregando = false;
+      function recarregarQuandoPossivel(motivo) {
+        if (recarregando) return; recarregando = true;
+        const quando = () => {
+          let ocupadoInv = false;
+          try { ocupadoInv = (typeof invTrava === 'function' && invTrava()); } catch (e) {}
+          try { document.querySelectorAll('iframe').forEach(f => { if (f.contentWindow && f.contentWindow.invFaseAtual > 0) ocupadoInv = true; }); } catch (e) {}
+          if (ocupadoInv) { rodape('Há dados novos na nuvem: a tela atualiza quando o inventário em andamento terminar.', 'text-amber-300'); return setTimeout(quando, 4000); }
+          const n = Number(sessionStorage.getItem('tbx_nuvem_recargas') || 0), t0 = Number(sessionStorage.getItem('tbx_nuvem_t0') || 0);
+          if (Date.now() - t0 > 60000) { sessionStorage.setItem('tbx_nuvem_t0', String(Date.now())); sessionStorage.setItem('tbx_nuvem_recargas', '0'); }
+          if (n >= 5) { rodape('Atualize a página (F5) para ver os dados novos.', 'text-amber-300'); recarregando = false; return; }   // trava anti-laço
+          sessionStorage.setItem('tbx_nuvem_recargas', String(n + 1));
+          location.reload();
+        };
+        const aviso = $('nuvem-aviso'); if (aviso) { aviso.classList.remove('hidden'); $('nuvem-aviso-txt').innerText = (motivo || 'Dados atualizados.') + ' Atualizando a tela...'; }
+        setTimeout(quando, 2500);
+      }
+
+      async function carregarFirebase() {
+        const [app, auth, fs] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')]);
+        return Object.assign({}, app, auth, fs);
+      }
+
+      async function boot() {
+        if (location.hash === '#nuvem-teste') { esconderTela(); return; }
+        tela('Conectando à nuvem...');
+        let fb;
+        try { fb = await Promise.race([carregarFirebase(), new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 20000))]); }
+        catch (e) { return tela('Não consegui conectar ao Firebase (verifique a internet).', { erro: true, offline: true }); }
+        const app = fb.initializeApp(CFG), auth = fb.getAuth(app), db = fb.getFirestore(app);
+        let iniciado = false;
+        $('nuvem-btn-login').onclick = async () => {
+          const p = new fb.GoogleAuthProvider(); p.setCustomParameters({ hd: DOMINIO.slice(1), prompt: 'select_account' });
+          try { await fb.signInWithPopup(auth, p); }
+          catch (e) {
+            const c = e && e.code;
+            tela(c === 'auth/unauthorized-domain' ? 'Este endereço não está autorizado no Firebase (Authentication > Configurações > Domínios autorizados).'
+              : c === 'auth/operation-not-supported-in-this-environment' ? 'O login Google não funciona abrindo o arquivo direto. Abra o app por um endereço http (ex.: Live Server/localhost ou o site publicado).'
+              : c === 'auth/popup-blocked' ? 'O navegador bloqueou a janela de login. Libere pop-ups para esta página e tente de novo.'
+              : c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request' ? 'Login cancelado.' : 'Não foi possível entrar: ' + (c || e.message), { login: true, erro: true });
+          }
+        };
+        $('nuvem-btn-tentar').onclick = () => location.reload();
+        $('nuvem-btn-offline').onclick = () => { esconderTela(); rodape('Sem nuvem: as alterações ficam só neste navegador.', 'text-amber-300'); };
+        $('nuvem-btn-sair').onclick = async () => { await fb.signOut(auth); location.reload(); };
+        fb.onAuthStateChanged(auth, async user => {
+          if (!user) { iniciado = false; return tela('Entre com sua conta Google da empresa (' + DOMINIO + ') para acessar a plataforma.', { login: true }); }
+          const email = (user.email || '').toLowerCase();
+          if (!email.endsWith(DOMINIO) || !user.emailVerified) {
+            await fb.signOut(auth); return tela('A conta ' + (user.email || '') + ' não é permitida. Use uma conta ' + DOMINIO + '.', { login: true, erro: true });
+          }
+          if (iniciado) return; iniciado = true;
+          tela('Sincronizando os dados com a nuvem...');
+          const adapter = criarAdapterFirebase(fb, db);
+          N.ui = {
+            status: (s, err) => { if (s === 'ok') rodape('Nuvem: sincronizado', 'text-emerald-400'); else { rodape('Sem conexão com a nuvem: as alterações ficam neste navegador e sobem quando voltar.', 'text-amber-300'); console.warn('nuvem:', err); } },
+            recarregar: recarregarQuandoPossivel,
+            copiaSeguranca: async () => { try { if (typeof bkMontar === 'function') { const h = new Date().toISOString().slice(0, 10); bkDownload('copia-local-antes-da-nuvem-' + h + '.json', await bkMontar()); } } catch (e) {} }
+          };
+          try { await N.iniciar(adapter, email); }
+          catch (e) { console.warn('nuvem:', e); iniciado = false; return tela('Não consegui sincronizar com a nuvem. Confira as regras do Firestore e a internet.', { erro: true, offline: true }); }
+          esconderTela();
+          $('nuvem-usuario').innerText = email; $('nuvem-bloco').classList.remove('hidden'); rodape('Nuvem: sincronizado', 'text-emerald-400');
+          adapter.ouvir(m => N.aplicarRemoto(m).catch(err => console.warn('nuvem:', err)));
+          setInterval(() => N.varrer(), 2500);
+          window.addEventListener('online', () => N.varrer());
+        });
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+    })();
+    /* NUVEM-FIM */
+  </script>
 
   <script>
     /* MP.CHP-DOC-INICIO */
