@@ -1758,7 +1758,9 @@
       const DOMINIO = '@grupotbx.com.br', COL_META = 'inventario', COL_PARTES = 'inventario_partes', CHUNK = 200000;
       // Fica só neste navegador (preferências, trava do inventário em andamento e a pessoa que está operando o MP.CHP).
       const EXCLUIR = new Set(['tbx_inv_andamento', 'tbx_chp_resp', 'tbx_chp_sessao', 'tbx_menu_recolhido', 'tbx_lt_desligado', 'tbx_nuvem_estado']);
-      const sincronizavel = k => typeof k === 'string' && k.startsWith('tbx_') && !EXCLUIR.has(k);
+      // Chaves fora do padrão tbx_ que também precisam ir para a nuvem: dados do módulo Treinamento (treinamentos, colaboradores, RNCs, avaliações, fluxogramas).
+      const EXTRAS = new Set(['INV_CHAPA_DB_V3_CLEAN']);
+      const sincronizavel = k => typeof k === 'string' && (k.startsWith('tbx_') || EXTRAS.has(k)) && !EXCLUIR.has(k);
       const ehObj = x => x && typeof x === 'object' && !Array.isArray(x);
 
       function hash(s) {            // identificador curto do texto (para saber se mudou desde o último envio)
