@@ -147,6 +147,11 @@
     };
     /* ARMAZEM-FIM */
   </script>
+  <script>
+    // Recarga automática (dados novos de outra pessoa): a tela azul "Conectando à nuvem" não aparece nem por um instante.
+    try { if (sessionStorage.getItem('tbx_nuvem_auto') === '1') document.documentElement.classList.add('tbx-auto'); } catch (e) {}
+  </script>
+  <style>html.tbx-auto #nuvem-overlay { display: none !important; }</style>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -2289,6 +2294,7 @@
         if (location.hash === '#nuvem-teste') { esconderTela(); return; }
         const auto = sessionStorage.getItem('tbx_nuvem_auto') === '1'; sessionStorage.removeItem('tbx_nuvem_auto');   // recarga automática: sem a tela azul de "conectando"
         if (auto) { esconderTela(); rodape('Nuvem: atualizando...', 'text-slate-400'); } else tela('Conectando à nuvem...');
+        document.documentElement.classList.remove('tbx-auto');   // daqui em diante a tela de login volta a funcionar normalmente, se precisar
         let fb;
         try { fb = await Promise.race([carregarFirebase(), new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 20000))]); }
         catch (e) { return tela('Não consegui conectar ao Firebase (verifique a internet).', { erro: true, offline: true }); }
