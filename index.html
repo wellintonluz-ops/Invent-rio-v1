@@ -763,7 +763,7 @@
             </button>
           </div>
 
-          <!-- Divergência -->
+          <!-- Divergências da 1ª contagem: o contador escolhe o que pedir para recontar -->
           <div id="resultado-divergencia" class="hidden w-full space-y-4">
             <div class="bg-white p-6 rounded-xl border border-amber-200 shadow-sm">
               <div class="flex items-center gap-3">
@@ -771,126 +771,115 @@
                   <i class="fa-solid fa-triangle-exclamation"></i>
                 </div>
                 <div>
-                  <h2 class="text-lg font-bold text-slate-800">Há divergência no seu inventário</h2>
+                  <h2 class="text-lg font-bold text-slate-800">Divergências encontradas</h2>
                   <p class="text-xs text-slate-500">Depósito <span id="resultado-div-deposito" class="font-semibold"></span></p>
                   <p id="resultado-div-tentativa" class="text-xs text-slate-400 mt-0.5"></p>
-                  <p class="text-xs text-slate-500 mt-1">O saldo do sistema dos itens divergentes não é exibido. O produto só fica OK quando alguma contagem bate com o sistema.</p>
+                  <p class="text-xs text-slate-500 mt-1">Estes produtos não bateram com o sistema (o saldo do sistema não é exibido). Marque os que quer pedir para outra pessoa recontar.</p>
                 </div>
               </div>
             </div>
-
             <div class="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden">
+              <div class="px-4 py-3 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer"><input type="checkbox" id="rc-div-todos" onchange="rcMarcarTodos('div', this.checked)" class="w-4 h-4"> Selecionar todas</label>
+                <span id="rc-div-contador" class="text-xs text-slate-500"></span>
+              </div>
               <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
                   <thead class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500">
                     <tr>
-                      <th class="py-2.5 px-3">Hora</th>
-                      <th class="py-2.5 px-3">Data</th>
+                      <th class="py-2.5 px-3 w-10"></th>
                       <th class="py-2.5 px-3">Produto</th>
-                      <th class="py-2.5 px-3 text-center">Qtd Físico</th>
-                      <th class="py-2.5 px-3 text-center">Sistema</th>
-                      <th class="py-2.5 px-3">Responsável</th>
-                      <th class="py-2.5 px-3 text-center">Acuracidade</th>
-                      <th class="py-2.5 px-3 text-center">Recontagem</th>
+                      <th class="py-2.5 px-3 text-center">Sua contagem</th>
+                      <th class="py-2.5 px-3 text-center">Situação</th>
                     </tr>
                   </thead>
-                  <tbody id="resultado-div-tbody" class="divide-y divide-blue-50"></tbody>
+                  <tbody id="rc-div-tbody" class="divide-y divide-blue-50"></tbody>
                 </table>
               </div>
             </div>
-
-            <div id="resultado-div-log" class="hidden"></div>
-
             <div class="bg-white p-6 rounded-xl border border-amber-200 shadow-sm">
-              <p class="text-sm font-semibold text-slate-700 mb-3">Deseja refazer a contagem?</p>
-              <div class="flex gap-3">
-                <button onclick="iniciarRecontagem()" class="flex-1 bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
-                  Sim, refazer contagem
+              <p class="text-sm font-semibold text-slate-700 mb-3">Deseja solicitar uma segunda contagem? (não é obrigatório)</p>
+              <div class="flex flex-col sm:flex-row gap-3">
+                <button id="rc-div-solicitar" onclick="rcSolicitarRecontagem()" disabled class="flex-1 bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+                  <i class="fa-solid fa-rotate mr-1"></i> Solicitar recontagem dos selecionados
                 </button>
                 <button onclick="finalizarComDivergencia()" class="flex-1 bg-blue-50 hover:bg-blue-100 text-tbx-navy px-5 py-2.5 rounded-lg text-sm font-semibold">
-                  Não, finalizar com divergência
+                  Não, enviar inventário com divergência
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Recontagem: escolher o que recontar -->
-          <div id="resultado-recontagem-escopo" class="hidden max-w-2xl mx-auto bg-white p-6 rounded-xl border border-blue-100 shadow-sm space-y-4">
-            <div>
-              <h2 class="text-lg font-bold text-slate-800">O que você quer recontar?</h2>
-              <p class="text-xs text-slate-500 mt-1">Escolha o filtro e veja a prévia antes de iniciar a recontagem.</p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button id="escopo-btn-divergentes" onclick="selecionarEscopoRecontagem('divergentes')" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-blue-100 transition-all bg-tbx-navy text-white">
-                Todos os Divergentes
-              </button>
-              <button id="escopo-btn-produto" onclick="selecionarEscopoRecontagem('produto')" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-blue-100 transition-all bg-blue-50 text-tbx-navy">
-                Produto Específico
-              </button>
-              <button id="escopo-btn-todos" onclick="selecionarEscopoRecontagem('todos')" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-blue-100 transition-all bg-blue-50 text-tbx-navy">
-                Toda a Tabela
-              </button>
-            </div>
-
-            <div id="escopo-produto-busca" class="hidden relative">
-              <input type="text" id="escopo-produto-input" placeholder="Digite o SKU do produto..." autocomplete="off"
-                oninput="handleEscopoProdutoInput()" onblur="setTimeout(hideEscopoProdutoSugestoes, 150)"
-                class="w-full border border-blue-100 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-tbx-navy/20 focus:border-tbx-navy">
-              <ul id="escopo-produto-sugestoes" class="hidden absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-blue-100 rounded-lg shadow-lg text-left z-10"></ul>
-            </div>
-
-            <button onclick="verItensRecontagem()" class="w-full bg-blue-50 hover:bg-blue-100 text-tbx-navy px-5 py-2.5 rounded-lg text-sm font-semibold">
-              <i class="fa-solid fa-eye mr-2"></i> Ver Itens para Recontagem
-            </button>
-
-            <div id="escopo-preview-wrap" class="hidden">
-              <div class="overflow-x-auto border border-blue-100 rounded-lg">
-                <table class="w-full text-left text-sm">
-                  <thead class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500">
-                    <tr>
-                      <th class="py-2 px-3">Produto</th>
-                      <th class="py-2 px-3 text-center">Contagens Feitas</th>
-                      <th class="py-2 px-3 text-center">Situação</th>
-                    </tr>
-                  </thead>
-                  <tbody id="escopo-preview-tbody" class="divide-y divide-blue-50"></tbody>
-                </table>
-              </div>
-              <p id="escopo-preview-vazio" class="hidden text-xs text-slate-400 mt-2">Nenhum item corresponde a esse filtro.</p>
-              <p id="escopo-preview-count" class="text-xs text-slate-400 mt-2"></p>
-            </div>
-
-            <div class="flex gap-3 pt-2">
-              <button onclick="voltarParaDivergenciaDaEscopo()" class="flex-1 bg-blue-50 hover:bg-blue-100 text-tbx-navy px-5 py-2.5 rounded-lg text-sm font-semibold">
-                Voltar
-              </button>
-              <button id="escopo-continuar-btn" onclick="continuarParaRecontagemNome()" disabled class="flex-1 bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
-                Continuar
-              </button>
-            </div>
-          </div>
-
-          <!-- Recontagem: validação do contador principal -->
-          <div id="resultado-validacao" class="hidden w-full max-w-3xl mx-auto space-y-4">
-            <div class="bg-white p-6 rounded-xl border border-amber-200 shadow-sm">
+          <!-- Recontagem: o recontador digita a quantidade de cada produto pedido -->
+          <div id="resultado-recontagem-lista" class="hidden w-full max-w-3xl mx-auto space-y-4">
+            <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm">
               <div class="flex items-center gap-3">
-                <div class="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xl flex-shrink-0"><i class="fa-solid fa-user-check"></i></div>
+                <div class="w-12 h-12 rounded-full bg-blue-50 text-tbx-navy flex items-center justify-center text-xl flex-shrink-0"><i class="fa-solid fa-clipboard-list"></i></div>
                 <div>
-                  <h2 class="text-lg font-bold text-slate-800">Validação do contador principal</h2>
-                  <p id="validacao-intro" class="text-xs text-slate-500 mt-1"></p>
+                  <h2 id="rc-lista-titulo" class="text-lg font-bold text-slate-800">Segunda contagem</h2>
+                  <p id="rc-lista-sub" class="text-xs text-slate-500 mt-0.5"></p>
                 </div>
               </div>
             </div>
-            <div id="validacao-lista" class="space-y-3"></div>
-            <p id="validacao-erro" class="hidden text-sm font-medium text-rose-700"></p>
-            <button id="validacao-confirmar" onclick="confirmarValidacoes()" class="w-full bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed" disabled>Confirmar validação</button>
+            <div class="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500">
+                    <tr><th class="py-2.5 px-3">Produto</th><th id="rc-lista-th-qtd" class="py-2.5 px-3 text-center w-48">Quantidade contada</th></tr>
+                  </thead>
+                  <tbody id="rc-lista-tbody" class="divide-y divide-blue-50"></tbody>
+                </table>
+              </div>
+            </div>
+            <p id="rc-lista-erro" class="hidden text-sm font-medium text-rose-700"></p>
+            <div class="flex flex-col sm:flex-row gap-3">
+              <button onclick="rcCancelarRecontagem()" class="sm:w-48 bg-blue-50 hover:bg-blue-100 text-tbx-navy px-5 py-2.5 rounded-lg text-sm font-semibold">Cancelar recontagem</button>
+              <button id="rc-lista-iniciar" onclick="rcIniciarRecontagem()" class="flex-1 bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold"><i class="fa-solid fa-play mr-1"></i> Iniciar segunda contagem</button>
+              <button id="rc-lista-encerrar" onclick="rcEncerrarRecontagem()" class="hidden flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-flag-checkered mr-1"></i> Encerrar segunda contagem</button>
+            </div>
+          </div>
+
+          <!-- Comparação das contagens (depois de cada recontagem) -->
+          <div id="resultado-comparacao" class="hidden w-full space-y-4">
+            <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 rounded-full bg-blue-50 text-tbx-navy flex items-center justify-center text-xl flex-shrink-0"><i class="fa-solid fa-scale-balanced"></i></div>
+                <div>
+                  <h2 class="text-lg font-bold text-slate-800">Resultado das recontagens</h2>
+                  <p class="text-xs text-slate-500">Depósito <span id="rc-cmp-deposito" class="font-semibold"></span> · <span id="rc-cmp-tentativa"></span></p>
+                  <p class="text-xs text-slate-500 mt-1"><span class="inline-block w-3 h-3 rounded-sm bg-emerald-200 align-middle mr-1"></span>Verde: bateu com o sistema ou com outra contagem (é a que vale).
+                    <span class="inline-block w-3 h-3 rounded-sm bg-rose-200 align-middle ml-2 mr-1"></span>Vermelho: não bateu com nada. Se tudo ficar vermelho, vale a do 1º contador. O saldo do sistema não é exibido.</p>
+                </div>
+              </div>
+            </div>
+            <div class="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden">
+              <div class="px-4 py-3 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer"><input type="checkbox" id="rc-cmp-todos" onchange="rcMarcarTodos('cmp', this.checked)" class="w-4 h-4"> Selecionar todas as divergentes</label>
+                <span id="rc-cmp-contador" class="text-xs text-slate-500"></span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead id="rc-cmp-thead" class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500"></thead>
+                  <tbody id="rc-cmp-tbody" class="divide-y divide-blue-50"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="rc-cmp-log"></div>
+            <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm flex flex-col sm:flex-row gap-3">
+              <button id="rc-cmp-mais" onclick="rcSolicitarRecontagem()" disabled class="flex-1 bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-rotate mr-1"></i> Mais recontagem dos selecionados
+              </button>
+              <button onclick="rcFinalizar()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">
+                <i class="fa-solid fa-check mr-1"></i> Finalizar inventário
+              </button>
+            </div>
           </div>
 
           <!-- Recontagem: novo nome -->
           <div id="resultado-recontagem-nome" class="hidden max-w-lg mx-auto text-center bg-white p-6 rounded-xl border border-blue-100 shadow-sm">
-            <h2 class="text-lg font-bold text-slate-800">Nova Contagem</h2>
-            <p class="text-sm text-slate-500 mt-1 mb-5">Informe o nome de quem vai refazer a contagem.</p>
+            <h2 class="text-lg font-bold text-slate-800">Solicitar recontagem</h2>
+            <p class="text-sm text-slate-500 mt-1">Informe o nome de quem vai recontar. Precisa ser uma pessoa que ainda não contou este inventário.</p>
+            <p id="rc-nome-resumo" class="text-xs font-mono text-slate-500 mt-2 mb-5 break-words"></p>
             <form id="recontagem-nome-form" onsubmit="handleRecontagemNomeSubmit(event)" class="flex flex-col gap-3">
               <div class="relative">
                 <input type="text" id="recontagem-nome-input" placeholder="Seu nome" autocomplete="off"
@@ -898,7 +887,8 @@
                   class="w-full border border-blue-100 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-tbx-navy/20 focus:border-tbx-navy" required>
                 <ul id="recontagem-nome-sugestoes" class="hidden absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-blue-100 rounded-lg shadow-lg text-left z-10"></ul>
               </div>
-              <button type="submit" class="bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">Iniciar Recontagem</button>
+              <button type="submit" class="bg-tbx-navy hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg text-sm font-semibold">Continuar</button>
+              <button type="button" onclick="rcVoltarDoNome()" class="bg-blue-50 hover:bg-blue-100 text-tbx-navy px-5 py-2.5 rounded-lg text-sm font-semibold">Voltar</button>
             </form>
             <div id="recontagem-nome-erro" class="hidden mt-4 p-3 bg-rose-50 border border-rose-100 rounded-lg text-sm text-rose-700 font-medium">
               Favor solicitar cadastro para o responsável.
@@ -911,7 +901,7 @@
               <div class="w-16 h-16 rounded-full bg-rose-50 text-tbx-red flex items-center justify-center text-3xl mb-4 mx-auto">
                 <i class="fa-solid fa-circle-exclamation"></i>
               </div>
-              <h2 class="text-lg font-bold text-slate-800">Inventário Finalizado com Divergência</h2>
+              <h2 class="text-lg font-bold text-slate-800">Inventário enviado com divergência</h2>
               <p class="text-sm text-slate-500 mt-1">Depósito <span id="resultado-fim-deposito" class="font-semibold"></span></p>
               <p id="resultado-fim-tentativa" class="text-xs text-slate-400 mt-1"></p>
             </div>
@@ -3250,7 +3240,7 @@
         if (raw && raw.inventarioAtual && raw.selectedDeposito) {
           switchTab('depositos');
           selectedDeposito = raw.selectedDeposito; inventarioAtual = raw.inventarioAtual;
-          if (raw.tela === 'deposito-resultado' && inventarioAtual.tentativas.length) mostrarResultadoDivergencia([]);
+          if (raw.tela === 'deposito-resultado' && inventarioAtual.tentativas.length) mostrarFaseInventario();
           else {
             hideAllDepositoScreens();
             document.getElementById('deposito-validar-fisico').classList.remove('hidden');
@@ -3670,6 +3660,8 @@
         contagemFisica: JSON.parse(JSON.stringify(inventarioAtual.contagemFisica)),
         divergencias: [],
         escopoRecontagem: inventarioAtual.escopoRecontagem || null,
+        login: rcLoginSessao(),
+        regra: 2,
         resultado: 'sucesso'
       };
 
@@ -3690,15 +3682,6 @@
       tentativa.divergencias = divergencias;
       tentativa.resultado = divergencias.length === 0 ? 'sucesso' : 'divergente';
 
-      // Recontagem por OUTRA pessoa: se ela contou diferente do contador principal, ele precisa validar antes.
-      if (inventarioAtual.tentativas.length >= 1) {
-        const conflitos = calcularConflitosValidacao(tentativa);
-        if (conflitos.length > 0) {
-          inventarioAtual.validacaoPendente = { tentativa, conflitos, escolhas: {} };
-          mostrarValidacaoPrincipal();
-          return;
-        }
-      }
       concluirTentativa(tentativa);
     }
 
@@ -3721,142 +3704,225 @@
       tentativa.resultado = divergencias.length === 0 ? 'sucesso' : 'divergente';
       inventarioAtual.tentativas.push(tentativa);
 
+      if (inventarioAtual.tentativas.length > 1) { mostrarComparacao(); return; }
       if (divergencias.length === 0) {
         finalizarInventario('sucesso');
         mostrarResultadoSucesso();
       } else {
-        mostrarResultadoDivergencia(divergencias);
+        mostrarResultadoDivergencia();
       }
     }
 
-    // ---- Validação do contador principal ----
-    // Compara a contagem recém-encerrada com a contagem vigente do contador principal e lista as diferenças.
-    // Itens que já bateram com o sistema ficam OK direto (sem validação).
-    function calcularConflitosValidacao(tentativaNova) {
-      const antes = inventarioAtual.tentativas;
-      const linhas = construirLinhasComparativas(antes, inventarioAtual.dadosSistema);
-      const porSku = {};
-      linhas.forEach(l => { porSku[l.sku] = l; });
-
-      const novo = {};
-      (tentativaNova.contagemFisica || []).forEach(i => {
-        if (i.naoContado) return;
-        novo[i.produto] = (novo[i.produto] || 0) + (Number(i.quantidade) || 0);
-      });
-      const ultimaAnterior = antes[antes.length - 1];
-      const skusAnteriores = new Set(((ultimaAnterior && ultimaAnterior.contagemFisica) || []).map(i => i.produto));
-      const escopo = tentativaNova.escopoRecontagem || [];
-      const candidatos = [...new Set([...escopo, ...Object.keys(novo).filter(s => !skusAnteriores.has(s))])];
-
-      const conflitos = [];
-      candidatos.forEach(sku => {
-        const l = porSku[sku] || null;
-        if (l && (l.status === 'ok' || (l.status === 'nao-contado' && !l.invalidado))) return;
-        let qtdPrincipal = null;
-        if (l) {
-          const validas = l.contagens.filter(c => !c.invalidada && !c.substituida);
-          const b = validas.length ? validas[validas.length - 1] : null;
-          qtdPrincipal = b && b.presente ? b.quantidade : null;
-        }
-        const qtdColega = Object.prototype.hasOwnProperty.call(novo, sku) ? novo[sku] : null;
-        if (qtdPrincipal === qtdColega) return;
-        const tipo = qtdPrincipal === null ? 'sku_novo' : (qtdColega === null ? 'nao_achou' : 'qtd');
-        conflitos.push({ sku, tipo, qtdPrincipal, qtdColega });
-      });
-      return conflitos.sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR'));
+    // ---- RECONTAGEM ----
+    // 1º contador encerra: havendo divergência, escolhe quais produtos pedir para recontar (ou envia o inventário com divergência).
+    // O recontador é uma pessoa que ainda não contou este inventário; vê só os produtos pedidos (sem o saldo do sistema) e digita a quantidade de cada um.
+    // Depois de cada recontagem aparece a comparação: verde = bateu com o sistema ou com outra contagem; vermelho = não bateu com nada.
+    // Vale sempre uma contagem verde (primeiro a que bate com o sistema; depois a que mais pessoas contaram igual); tudo vermelho = vale a do 1º contador.
+    // Todas as contagens ficam no histórico do inventário, com quantidade, nome e login de quem contou.
+    const RC_ORDINAL = n => ['', 'primeira', 'segunda', 'terceira', 'quarta', 'quinta', 'sexta', 'sétima', 'oitava', 'nona', 'décima'][n] || (n + 'ª');
+    let rcElegiveis = [];
+    function rcLoginSessao() { try { return (JSON.parse(sessionStorage.getItem('tbx_usuario_sessao')) || {}).login || ''; } catch (e) { return ''; } }
+    function rcLinhas() { return construirLinhasComparativas(inventarioAtual.tentativas, inventarioAtual.dadosSistema); }
+    function rcQtdTxt(c) { return c && c.presente ? String(c.quantidade) : '0'; }
+    function rcRotuloContagem(c) {
+      if (c.bateuSistema) return 'bateu com o sistema';
+      if (c.bateuCom && c.bateuCom.length) return 'igual à ' + c.bateuCom.map(x => x + 'ª').join(', ');
+      return 'não bateu';
     }
-
-    function mostrarValidacaoPrincipal() {
-      const pend = inventarioAtual.validacaoPendente;
-      const principal = inventarioAtual.tentativas[0].colaborador;
-      const colega = pend.tentativa.colaborador;
+    function rcMostrarView(id, titulo) {
       hideAllDepositoScreens();
       document.getElementById('deposito-resultado').classList.remove('hidden');
       hideAllResultadoViews();
-      document.getElementById('resultado-validacao').classList.remove('hidden');
-      document.getElementById('page-title').innerText = `Validação - ${inventarioAtual.deposito.nome}`;
-      document.getElementById('validacao-intro').innerText = `${colega} contou diferente de ${principal} (contador principal). ${principal} decide, item a item, qual contagem vale. O saldo do sistema não é exibido.`;
-      renderValidacaoLista();
+      document.getElementById(id).classList.remove('hidden');
+      if (titulo) document.getElementById('page-title').innerText = `${titulo} - ${inventarioAtual.deposito.nome}`;
+      window.scrollTo(0, 0);
     }
 
-    function renderValidacaoLista() {
-      const pend = inventarioAtual.validacaoPendente;
-      const principal = escHtml(inventarioAtual.tentativas[0].colaborador);
-      const colega = escHtml(pend.tentativa.colaborador);
-      const btn = (i, dec, texto, cor) => {
-        const sel = pend.escolhas[i] === dec;
-        return `<button onclick="escolherValidacao(${i}, '${dec}')" class="px-3 py-2 rounded-lg text-sm font-semibold border whitespace-nowrap ${sel ? cor.on : cor.off}">${sel ? '<i class="fa-solid fa-circle-check mr-1"></i>' : ''}${texto}</button>`;
-      };
-      const verde = { on: 'bg-emerald-600 text-white border-emerald-600', off: 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50' };
-      const azul = { on: 'bg-tbx-navy text-white border-tbx-navy', off: 'bg-white text-tbx-navy border-blue-200 hover:bg-blue-50' };
-      const rosa = { on: 'bg-rose-600 text-white border-rose-600', off: 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' };
-      const celQtd = q => q === null ? '<span class="text-slate-400 font-semibold">não encontrou</span>' : `<span class="text-2xl font-extrabold text-slate-800">${q}</span><span class="text-xs text-slate-500"> un.</span>`;
-      const tipoTxt = { qtd: 'Quantidade diferente', sku_novo: 'SKU que só o colega achou', nao_achou: 'SKU que o colega não achou' };
+    // Leva para a tela certa do inventário em andamento (também ao reabrir a página).
+    function mostrarFaseInventario() {
+      if (!inventarioAtual) return;
+      if (inventarioAtual.recontagem) return mostrarRecontagemLista();
+      if (inventarioAtual.fase === 'nome') return rcMostrarNome();
+      if (inventarioAtual.tentativas.length > 1) return mostrarComparacao();
+      return mostrarResultadoDivergencia();
+    }
 
-      const linhas = pend.conflitos.map((c, i) => {
-        let botoes;
-        if (c.tipo === 'sku_novo') botoes = btn(i, 'colega', 'Aceitar a dele: registrar no inventário (+1 SKU)', verde) + btn(i, 'principal', 'Não validar', rosa);
-        else botoes = btn(i, 'principal', `Manter a minha`, azul) + btn(i, 'colega', `Aceitar a de ${colega}`, verde);
-        const feito = !!pend.escolhas[i];
-        return `<tr class="${feito ? '' : 'bg-amber-50/40'}">
-          <td class="py-3 px-3 font-mono font-bold text-slate-800">${escHtml(c.sku)}<div class="text-[11px] font-sans font-medium text-slate-500 mt-0.5">${tipoTxt[c.tipo]}</div></td>
-          <td class="py-3 px-3 text-center">${celQtd(c.qtdPrincipal)}</td>
-          <td class="py-3 px-3 text-center">${celQtd(c.qtdColega)}</td>
-          <td class="py-3 px-3"><div class="flex flex-wrap gap-2 justify-center">${botoes}</div></td></tr>`;
+    // Tela 1: divergências da 1ª contagem, com caixinha para escolher o que recontar.
+    function mostrarResultadoDivergencia() {
+      if (inventarioAtual.tentativas.length > 1) return mostrarComparacao();
+      inventarioAtual.fase = 'divergencias';
+      rcMostrarView('resultado-divergencia', 'Divergência');
+      document.getElementById('resultado-div-deposito').innerText = inventarioAtual.deposito.nome;
+      document.getElementById('resultado-div-tentativa').innerText = `${textoContagemVezes(inventarioAtual.tentativas.length)} • ${textoHorariosInventario(inventarioAtual.tentativas)}`;
+      const linhas = rcLinhas().filter(l => l.status === 'divergente');
+      rcElegiveis = linhas.map(l => l.sku);
+      if (!Array.isArray(inventarioAtual.selecaoRecontagem)) inventarioAtual.selecaoRecontagem = [];
+      inventarioAtual.selecaoRecontagem = inventarioAtual.selecaoRecontagem.filter(s => rcElegiveis.includes(s));
+      const sel = new Set(inventarioAtual.selecaoRecontagem);
+      document.getElementById('rc-div-tbody').innerHTML = linhas.map(l => {
+        const c = l.contagens[0];
+        return `<tr class="hover:bg-blue-50/50">
+          <td class="py-2.5 px-3"><input type="checkbox" class="w-4 h-4 cursor-pointer" ${sel.has(l.sku) ? 'checked' : ''} onchange="rcMarcar('div', '${l.sku.replace(/'/g, "\\'")}', this.checked)"></td>
+          <td class="py-2.5 px-3 font-mono font-semibold text-slate-800">${escHtml(l.sku)}</td>
+          <td class="py-2.5 px-3 text-center font-bold">${c && c.presente ? escHtml(String(c.quantidade)) : '<span class="text-slate-400 font-semibold">não encontrou</span>'}</td>
+          <td class="py-2.5 px-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 whitespace-nowrap">Não bateu com o sistema</span></td></tr>`;
       }).join('');
-
-      const feitos = pend.conflitos.filter((c, i) => pend.escolhas[i]).length;
-      document.getElementById('validacao-lista').innerHTML = `
-        <div class="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden">
-          <div class="px-4 py-3 border-b border-blue-100 flex flex-wrap items-center gap-2 justify-between">
-            <p class="text-sm font-semibold text-slate-700">${feitos} de ${pend.conflitos.length} itens decididos <span class="font-normal text-slate-500">· escolha item por item (pode misturar)</span></p>
-            <div class="flex gap-2 text-xs">
-              <button onclick="escolherTodasValidacoes('principal')" class="px-2.5 py-1.5 rounded-lg border border-blue-200 text-tbx-navy font-semibold hover:bg-blue-50">Manter todas as minhas</button>
-              <button onclick="escolherTodasValidacoes('colega')" class="px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 font-semibold hover:bg-emerald-50">Aceitar todas as dele</button>
-            </div>
-          </div>
-          <div class="overflow-x-auto"><table class="w-full text-sm">
-            <thead class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500"><tr>
-              <th class="py-2.5 px-3 text-left">Produto</th>
-              <th class="py-2.5 px-3 text-center">Minha contagem<div class="normal-case font-medium text-slate-400">${principal}</div></th>
-              <th class="py-2.5 px-3 text-center">Contagem do colega<div class="normal-case font-medium text-slate-400">${colega}</div></th>
-              <th class="py-2.5 px-3 text-center">Qual vale?</th></tr></thead>
-            <tbody class="divide-y divide-blue-50">${linhas}</tbody></table></div>
-        </div>`;
-
-      const todos = pend.conflitos.every((c, i) => pend.escolhas[i]);
-      document.getElementById('validacao-confirmar').disabled = !todos;
+      rcAtualizarSelecao('div');
     }
 
-    function escolherTodasValidacoes(decisao) {
-      const pend = inventarioAtual.validacaoPendente;
-      pend.conflitos.forEach((c, i) => { pend.escolhas[i] = decisao; });
-      renderValidacaoLista();
+    function rcMarcar(tipo, sku, on) {
+      const s = new Set(inventarioAtual.selecaoRecontagem || []);
+      if (on) s.add(sku); else s.delete(sku);
+      inventarioAtual.selecaoRecontagem = rcElegiveis.filter(x => s.has(x));
+      rcAtualizarSelecao(tipo);
+    }
+    function rcMarcarTodos(tipo, on) {
+      inventarioAtual.selecaoRecontagem = on ? rcElegiveis.slice() : [];
+      document.querySelectorAll(`#rc-${tipo}-tbody input[type=checkbox]`).forEach(cb => { cb.checked = on; });
+      rcAtualizarSelecao(tipo);
+    }
+    function rcAtualizarSelecao(tipo) {
+      const n = (inventarioAtual.selecaoRecontagem || []).length, total = rcElegiveis.length;
+      const todos = document.getElementById(`rc-${tipo}-todos`);
+      if (todos) { todos.checked = total > 0 && n === total; todos.indeterminate = n > 0 && n < total; todos.disabled = total === 0; }
+      const cont = document.getElementById(`rc-${tipo}-contador`);
+      if (cont) cont.innerText = total ? `${n} de ${total} selecionado(s) para recontar` : 'Nenhum produto divergente para recontar';
+      const btn = document.getElementById(tipo === 'div' ? 'rc-div-solicitar' : 'rc-cmp-mais');
+      if (btn) btn.disabled = n === 0;
     }
 
-    function escolherValidacao(i, decisao) {
-      inventarioAtual.validacaoPendente.escolhas[i] = decisao;
-      renderValidacaoLista();
+    // Pede o nome de quem vai recontar (precisa ser alguém que ainda não contou este inventário).
+    function rcSolicitarRecontagem() {
+      if (!inventarioAtual || !(inventarioAtual.selecaoRecontagem || []).length) return;
+      inventarioAtual.fase = 'nome';
+      rcMostrarNome();
+    }
+    function rcMostrarNome() {
+      rcMostrarView('resultado-recontagem-nome', 'Recontagem');
+      const n = (inventarioAtual.selecaoRecontagem || []).length;
+      document.getElementById('rc-nome-resumo').innerText = `${n} produto(s) para recontar: ${(inventarioAtual.selecaoRecontagem || []).join(', ')}`;
+      document.getElementById('recontagem-nome-form').reset();
+      document.getElementById('recontagem-nome-erro').classList.add('hidden');
+      setTimeout(() => { const i = document.getElementById('recontagem-nome-input'); if (i) i.focus(); }, 50);
+    }
+    function rcVoltarDoNome() {
+      inventarioAtual.fase = null;
+      mostrarFaseInventario();
     }
 
-    function confirmarValidacoes() {
-      const pend = inventarioAtual && inventarioAtual.validacaoPendente;
-      if (!pend || !pend.conflitos.every((c, i) => pend.escolhas[i])) return;
-      const principal = inventarioAtual.tentativas[0].colaborador;
+    // Tela do recontador: lista os produtos pedidos; ao iniciar, abre um campo de quantidade para cada um.
+    function mostrarRecontagemLista() {
+      const r = inventarioAtual.recontagem, n = inventarioAtual.tentativas.length + 1;
+      rcMostrarView('resultado-recontagem-lista', 'Recontagem');
+      document.getElementById('rc-lista-titulo').innerText = `${n}ª contagem — ${r.colaborador}`;
+      document.getElementById('rc-lista-sub').innerText = `Recontagem pedida por ${r.solicitadaPor}: ${r.skus.length} produto(s). `
+        + (r.iniciada ? 'Conte cada produto e digite a quantidade encontrada (0 se não encontrar).' : `Confira a lista e aperte "Iniciar ${RC_ORDINAL(n)} contagem".`);
+      const ini = document.getElementById('rc-lista-iniciar'), fim = document.getElementById('rc-lista-encerrar');
+      ini.innerHTML = `<i class="fa-solid fa-play mr-1"></i> Iniciar ${RC_ORDINAL(n)} contagem`;
+      fim.innerHTML = `<i class="fa-solid fa-flag-checkered mr-1"></i> Encerrar ${RC_ORDINAL(n)} contagem`;
+      ini.classList.toggle('hidden', !!r.iniciada); fim.classList.toggle('hidden', !r.iniciada);
+      document.getElementById('rc-lista-th-qtd').classList.toggle('hidden', !r.iniciada);
+      document.getElementById('rc-lista-erro').classList.add('hidden');
+      document.getElementById('rc-lista-tbody').innerHTML = r.skus.map((sku, i) => `<tr>
+          <td class="py-2.5 px-3 font-mono font-semibold text-slate-800">${escHtml(sku)}</td>
+          ${r.iniciada ? `<td class="py-2 px-3 text-center"><input type="number" min="0" step="any" inputmode="decimal" data-rc-i="${i}" value="${r.qtd[sku] !== undefined ? escHtml(String(r.qtd[sku])) : ''}"
+            oninput="rcDigitar('${sku.replace(/'/g, "\\'")}', this.value)" onkeydown="if (event.key === 'Enter') { event.preventDefault(); const p = document.querySelector('[data-rc-i=&quot;${i + 1}&quot;]'); if (p) p.focus(); else this.blur(); }"
+            class="w-32 border border-blue-100 rounded-lg px-3 py-2 text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-tbx-navy/20 focus:border-tbx-navy" placeholder="Qtd"></td>` : ''}
+        </tr>`).join('');
+      rcAtualizarEncerrar();
+    }
+    function rcIniciarRecontagem() {
+      const r = inventarioAtual.recontagem; if (!r) return;
+      r.iniciada = true; r.inicio = new Date().toISOString();
+      mostrarRecontagemLista();
+      const p = document.querySelector('[data-rc-i="0"]'); if (p) p.focus();
+    }
+    function rcDigitar(sku, v) {
+      const r = inventarioAtual.recontagem; if (!r) return;
+      if (v === '') delete r.qtd[sku]; else r.qtd[sku] = v;
+      rcAtualizarEncerrar();
+    }
+    function rcQtdValida(v) { if (v === undefined || v === null || String(v).trim() === '') return null; const n = Number(String(v).replace(',', '.')); return isNaN(n) || n < 0 ? null : n; }
+    function rcAtualizarEncerrar() {
+      const r = inventarioAtual.recontagem, b = document.getElementById('rc-lista-encerrar'); if (!r || !b) return;
+      const faltam = r.skus.filter(s => rcQtdValida(r.qtd[s]) === null).length;
+      b.disabled = faltam > 0;
+      b.title = faltam ? `Falta digitar a quantidade de ${faltam} produto(s)` : '';
+    }
+    function rcCancelarRecontagem() {
+      const r = inventarioAtual.recontagem;
+      if (r && r.iniciada && Object.keys(r.qtd).length && !confirm('Cancelar a recontagem? As quantidades digitadas serão descartadas.')) return;
+      inventarioAtual.recontagem = null; inventarioAtual.fase = null;
+      mostrarFaseInventario();
+    }
+    function rcEncerrarRecontagem() {
+      const r = inventarioAtual.recontagem; if (!r) return;
+      const faltando = r.skus.filter(s => rcQtdValida(r.qtd[s]) === null);
+      if (faltando.length) { const e = document.getElementById('rc-lista-erro'); e.innerText = `Digite a quantidade de: ${faltando.join(', ')} (0 se não encontrou).`; e.classList.remove('hidden'); return; }
       const agora = new Date().toISOString();
-      pend.tentativa.validacoes = {};
-      pend.conflitos.forEach((c, i) => {
-        pend.tentativa.validacoes[c.sku] = {
-          tipo: c.tipo,
-          decisao: pend.escolhas[i],
-          qtdPrincipal: c.qtdPrincipal,
-          qtdColega: c.qtdColega,
-          principal,
-          colega: pend.tentativa.colaborador,
-          em: agora
-        };
-      });
-      concluirTentativa(pend.tentativa);
+      const tentativa = {
+        numero: inventarioAtual.tentativas.length + 1,
+        colaborador: r.colaborador,
+        login: r.login,
+        regra: 2,
+        dataInicio: r.inicio || r.solicitadaEm,
+        dataFim: agora,
+        contagemFisica: r.skus.map(sku => ({ produto: sku, quantidade: rcQtdValida(r.qtd[sku]), hora: agora, vezes: 1, naoContado: false })),
+        escopoRecontagem: r.skus.slice(),
+        solicitadaPor: r.solicitadaPor,
+        solicitadaEm: r.solicitadaEm,
+        divergencias: [],
+        resultado: 'sucesso'
+      };
+      inventarioAtual.recontagem = null; inventarioAtual.fase = null;
+      concluirTentativa(tentativa);
+    }
+
+    // Tela de comparação: cada contagem em verde (bateu) ou vermelho (não bateu), a quantidade que vale e a opção de recontar de novo.
+    function mostrarComparacao() {
+      inventarioAtual.fase = 'comparacao';
+      rcMostrarView('resultado-comparacao', 'Recontagem');
+      const ts = inventarioAtual.tentativas;
+      document.getElementById('rc-cmp-deposito').innerText = inventarioAtual.deposito.nome;
+      document.getElementById('rc-cmp-tentativa').innerText = `${textoContagemVezes(ts.length)} • ${textoHorariosInventario(ts)}`;
+      const recontados = new Set(); ts.slice(1).forEach(t => (t.escopoRecontagem || []).forEach(s => recontados.add(s)));
+      const linhas = rcLinhas().filter(l => recontados.has(l.sku) || l.status === 'divergente');
+      rcElegiveis = linhas.filter(l => l.status === 'divergente').map(l => l.sku);
+      if (!Array.isArray(inventarioAtual.selecaoRecontagem)) inventarioAtual.selecaoRecontagem = [];
+      inventarioAtual.selecaoRecontagem = inventarioAtual.selecaoRecontagem.filter(s => rcElegiveis.includes(s));
+      const sel = new Set(inventarioAtual.selecaoRecontagem);
+      document.getElementById('rc-cmp-thead').innerHTML = `<tr><th class="py-2.5 px-3 w-10"></th><th class="py-2.5 px-3">Produto</th>`
+        + ts.map((t, i) => `<th class="py-2.5 px-3 text-center">${i + 1}ª contagem<div class="normal-case font-medium text-slate-400">${escHtml(t.colaborador)}</div></th>`).join('')
+        + `<th class="py-2.5 px-3 text-center">Quantidade que vale</th><th class="py-2.5 px-3 text-center">Situação</th></tr>`;
+      document.getElementById('rc-cmp-tbody').innerHTML = linhas.map(l => {
+        const celulas = ts.map((t, i) => {
+          const c = l.contagens.find(x => x.numero === (t.numero || i + 1));
+          if (!c) return '<td class="py-2.5 px-3 text-center text-slate-300">—</td>';
+          const verde = c.verde !== undefined ? c.verde : c.bateuSistema;
+          return `<td class="py-2 px-3 text-center ${verde ? 'bg-emerald-50' : 'bg-rose-50'}"><div class="text-lg font-extrabold ${verde ? 'text-emerald-700' : 'text-rose-700'}">${escHtml(rcQtdTxt(c))}</div><div class="text-[11px] font-semibold ${verde ? 'text-emerald-700' : 'text-rose-700'} whitespace-nowrap">${verde ? '<i class="fa-solid fa-check mr-0.5"></i>' : '<i class="fa-solid fa-xmark mr-0.5"></i>'}${escHtml(rcRotuloContagem(c))}</div></td>`;
+        }).join('');
+        const vale = l.fisico === null ? '0' : String(l.fisico);
+        const motivo = l.status === 'ok' ? 'confere com o sistema' : (l.confirmada ? 'contagens iguais' : 'vale a do 1º contador');
+        const situ = l.status === 'ok'
+          ? '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">OK</span>'
+          : (l.confirmada ? '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 whitespace-nowrap">Divergência confirmada</span>'
+            : '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">Divergente</span>');
+        const cb = l.status === 'divergente'
+          ? `<input type="checkbox" class="w-4 h-4 cursor-pointer" ${sel.has(l.sku) ? 'checked' : ''} onchange="rcMarcar('cmp', '${l.sku.replace(/'/g, "\\'")}', this.checked)">` : '';
+        return `<tr><td class="py-2.5 px-3">${cb}</td><td class="py-2.5 px-3 font-mono font-semibold text-slate-800">${escHtml(l.sku)}</td>${celulas}
+          <td class="py-2 px-3 text-center"><div class="text-lg font-extrabold text-slate-800">${escHtml(vale)}</div><div class="text-[11px] text-slate-500 whitespace-nowrap">${motivo}</div></td>
+          <td class="py-2.5 px-3 text-center">${situ}</td></tr>`;
+      }).join('') || `<tr><td colspan="${ts.length + 4}" class="py-6 text-center text-sm text-emerald-700 font-semibold">Nenhuma divergência.</td></tr>`;
+      rcAtualizarSelecao('cmp');
+      renderLogValidacoes('rc-cmp-log', ts, inventarioAtual.dadosSistema);
+    }
+
+    function rcFinalizar() {
+      const divergentes = rcLinhas().filter(l => l.status === 'divergente').length;
+      if (divergentes && !confirm(`Ainda há ${divergentes} produto(s) com divergência. Finalizar e enviar o inventário assim mesmo?`)) return;
+      inventarioAtual.fase = null; inventarioAtual.selecaoRecontagem = [];
+      if (divergentes) finalizarComDivergencia();
+      else { finalizarInventario('sucesso'); mostrarResultadoSucesso(); }
     }
 
     // Frase completa de uma validação (usada no histórico de recontagem).
@@ -3879,12 +3945,21 @@
     }
 
     // Histórico completo do inventário: quem contou, quando, e cada decisão do contador principal.
-    function htmlHistoricoRecontagem(tentativas) {
+    function htmlHistoricoRecontagem(tentativas, dadosSistema) {
       const itens = [];
+      const linhasV2 = (tentativas || []).length > 1 && tentativas[0].regra === 2 ? construirLinhasComparativas(tentativas, dadosSistema || []) : null;
       (tentativas || []).forEach((t, idx) => {
         const skus = new Set((t.contagemFisica || []).map(i => i.produto));
         const escopo = t.escopoRecontagem && t.escopoRecontagem.length ? ` Escopo da recontagem: ${t.escopoRecontagem.join(', ')}.` : '';
-        itens.push(`<li><b>${idx + 1}ª contagem</b> — ${escHtml(t.colaborador)}, ${t.dataInicio ? formatHoraBR(t.dataInicio) : '-'} às ${t.dataFim ? formatHoraBR(t.dataFim) : '-'} (${t.dataFim ? formatDateBR(t.dataFim) : ''}); ${skus.size} SKU(s) na contagem.${escHtml(escopo)}</li>`);
+        itens.push(`<li><b>${idx + 1}ª contagem</b> — ${escHtml(t.colaborador)}${t.login ? ` (login ${escHtml(t.login)})` : ''}${idx > 0 && t.solicitadaPor ? `, pedida por ${escHtml(t.solicitadaPor)}` : ''}, ${t.dataInicio ? formatHoraBR(t.dataInicio) : '-'} às ${t.dataFim ? formatHoraBR(t.dataFim) : '-'} (${t.dataFim ? formatDateBR(t.dataFim) : ''}); ${skus.size} SKU(s) na contagem.${escHtml(escopo)}</li>`);
+        if (linhasV2 && idx > 0) {
+          (t.escopoRecontagem || []).forEach(sku => {
+            const l = linhasV2.find(x => x.sku === sku), c = l && l.contagens.find(x => x.numero === (t.numero || idx + 1));
+            if (!c) return;
+            const verde = c.verde;
+            itens.push(`<li class="pl-4 ${verde ? 'text-emerald-800' : 'text-rose-800'}"><i class="fa-solid ${verde ? 'fa-check' : 'fa-xmark'} mr-1"></i><span class="font-mono font-semibold">${escHtml(sku)}</span>: ${escHtml(rcQtdTxt(c))} un. — ${escHtml(rcRotuloContagem(c))}</li>`);
+          });
+        }
         const vs = t.validacoes || {};
         Object.keys(vs).sort().forEach(sku => {
           const v = vs[sku];
@@ -3894,12 +3969,12 @@
       return itens.length ? `<ul class="space-y-1.5 text-xs text-slate-700 list-none">${itens.join('')}</ul>` : '';
     }
 
-    function renderLogValidacoes(elId, tentativas) {
+    function renderLogValidacoes(elId, tentativas, dadosSistema) {
       const el = document.getElementById(elId);
       if (!el) return;
-      const temValidacao = (tentativas || []).some(t => t.validacoes && Object.keys(t.validacoes).length);
+      const temValidacao = (tentativas || []).length > 1 || (tentativas || []).some(t => t.validacoes && Object.keys(t.validacoes).length);
       if (!temValidacao) { el.classList.add('hidden'); el.innerHTML = ''; return; }
-      el.innerHTML = `<div class="bg-white p-4 rounded-xl border border-blue-100 shadow-sm"><p class="text-sm font-semibold text-slate-700 mb-2"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Histórico de recontagem</p>${htmlHistoricoRecontagem(tentativas)}</div>`;
+      el.innerHTML = `<div class="bg-white p-4 rounded-xl border border-blue-100 shadow-sm"><p class="text-sm font-semibold text-slate-700 mb-2"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Histórico de recontagem</p>${htmlHistoricoRecontagem(tentativas, dadosSistema)}</div>`;
       el.classList.remove('hidden');
     }
 
@@ -3919,10 +3994,10 @@
     function hideAllResultadoViews() {
       document.getElementById('resultado-sucesso').classList.add('hidden');
       document.getElementById('resultado-divergencia').classList.add('hidden');
-      document.getElementById('resultado-recontagem-escopo').classList.add('hidden');
       document.getElementById('resultado-recontagem-nome').classList.add('hidden');
+      document.getElementById('resultado-recontagem-lista').classList.add('hidden');
+      document.getElementById('resultado-comparacao').classList.add('hidden');
       document.getElementById('resultado-finalizado-divergencia').classList.add('hidden');
-      document.getElementById('resultado-validacao').classList.add('hidden');
     }
 
     function mostrarResultadoSucesso() {
@@ -3937,23 +4012,8 @@
       document.getElementById('resultado-sucesso-tentativa').innerText = `${textoContagemVezes(inventarioAtual.tentativas.length)} • ${textoHorariosInventario(inventarioAtual.tentativas)}`;
       document.getElementById('page-title').innerText = `Resultado - ${nomeDeposito}`;
       renderTabelaComparativa(linhas, 'resultado-sucesso-tbody');
-      renderLogValidacoes('resultado-sucesso-log', inventarioAtual.tentativas);
+      renderLogValidacoes('resultado-sucesso-log', inventarioAtual.tentativas, inventarioAtual.dadosSistema);
       inventarioAtual = null;
-    }
-
-    function mostrarResultadoDivergencia(divergencias) {
-      hideAllDepositoScreens();
-      document.getElementById('deposito-resultado').classList.remove('hidden');
-      hideAllResultadoViews();
-      document.getElementById('resultado-divergencia').classList.remove('hidden');
-      document.getElementById('resultado-div-deposito').innerText = inventarioAtual.deposito.nome;
-      document.getElementById('resultado-div-tentativa').innerText = `${textoContagemVezes(inventarioAtual.tentativas.length)} • ${textoHorariosInventario(inventarioAtual.tentativas)}`;
-      document.getElementById('page-title').innerText = `Divergência - ${inventarioAtual.deposito.nome}`;
-
-      // Tela do contador: mostra que está errado, mas nunca o saldo do sistema.
-      const linhas = construirLinhasComparativas(inventarioAtual.tentativas, inventarioAtual.dadosSistema);
-      renderTabelaComparativa(linhas, 'resultado-div-tbody', { ocultarSistema: true });
-      renderLogValidacoes('resultado-div-log', inventarioAtual.tentativas);
     }
 
     function textoContagemVezes(n) {
@@ -3965,144 +4025,6 @@
       const inicio = tentativas[0].dataInicio;
       const fim = tentativas[tentativas.length - 1].dataFim;
       return `Iniciado às ${formatHoraBR(inicio)} • Finalizado às ${formatHoraBR(fim)}`;
-    }
-
-    function iniciarRecontagem() {
-      hideAllResultadoViews();
-      document.getElementById('resultado-recontagem-escopo').classList.remove('hidden');
-      document.getElementById('page-title').innerText = `Recontagem - ${inventarioAtual.deposito.nome}`;
-
-      recontagemEscopoTipo = 'divergentes';
-      recontagemEscopoSku = null;
-      recontagemSkusAlvo = [];
-      document.getElementById('escopo-produto-input').value = '';
-      document.getElementById('escopo-produto-busca').classList.add('hidden');
-      document.getElementById('escopo-preview-wrap').classList.add('hidden');
-      document.getElementById('escopo-continuar-btn').disabled = true;
-      selecionarEscopoRecontagem('divergentes');
-    }
-
-    // RECONTAGEM: escolha do que será recontado (todos os divergentes, um produto específico, ou tudo)
-    function selecionarEscopoRecontagem(tipo) {
-      recontagemEscopoTipo = tipo;
-      recontagemEscopoSku = null;
-
-      document.getElementById('escopo-produto-busca').classList.toggle('hidden', tipo !== 'produto');
-      if (tipo !== 'produto') document.getElementById('escopo-produto-input').value = '';
-
-      ['divergentes', 'produto', 'todos'].forEach(t => {
-        const btn = document.getElementById(`escopo-btn-${t}`);
-        if (t === tipo) {
-          btn.classList.add('bg-tbx-navy', 'text-white');
-          btn.classList.remove('bg-blue-50', 'text-tbx-navy');
-        } else {
-          btn.classList.remove('bg-tbx-navy', 'text-white');
-          btn.classList.add('bg-blue-50', 'text-tbx-navy');
-        }
-      });
-
-      document.getElementById('escopo-preview-wrap').classList.add('hidden');
-      document.getElementById('escopo-continuar-btn').disabled = true;
-    }
-
-    function handleEscopoProdutoInput() {
-      const input = document.getElementById('escopo-produto-input');
-      const list = document.getElementById('escopo-produto-sugestoes');
-      const query = input.value.trim().toUpperCase();
-      recontagemEscopoSku = null;
-      document.getElementById('escopo-continuar-btn').disabled = true;
-      document.getElementById('escopo-preview-wrap').classList.add('hidden');
-
-      if (!query) {
-        list.classList.add('hidden');
-        list.innerHTML = '';
-        return;
-      }
-
-      const matches = getCatalogoProdutosAtual()
-        .filter(p => p.sku.toUpperCase().startsWith(query))
-        .slice(0, 8);
-
-      if (matches.length === 0) {
-        list.classList.add('hidden');
-        list.innerHTML = '';
-        return;
-      }
-
-      list.innerHTML = matches.map(p => `
-        <li onmousedown="selecionarEscopoProduto('${p.sku.replace(/'/g, "\\'")}')" class="px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 cursor-pointer font-mono">${p.sku}</li>
-      `).join('');
-      list.classList.remove('hidden');
-    }
-
-    function hideEscopoProdutoSugestoes() {
-      const list = document.getElementById('escopo-produto-sugestoes');
-      list.classList.add('hidden');
-      list.innerHTML = '';
-    }
-
-    function selecionarEscopoProduto(sku) {
-      recontagemEscopoSku = sku;
-      document.getElementById('escopo-produto-input').value = sku;
-      hideEscopoProdutoSugestoes();
-    }
-
-    function verItensRecontagem() {
-      const linhas = construirLinhasComparativas(inventarioAtual.tentativas, inventarioAtual.dadosSistema);
-
-      let alvo;
-      if (recontagemEscopoTipo === 'todos') {
-        alvo = linhas;
-      } else if (recontagemEscopoTipo === 'produto') {
-        alvo = recontagemEscopoSku ? linhas.filter(l => l.sku === recontagemEscopoSku) : [];
-      } else {
-        // Divergências ainda sem confirmação (duas contagens iguais) vêm primeiro; se todas
-        // já estão confirmadas, o filtro cai para todas as divergentes.
-        const divergentes = linhas.filter(l => l.status === 'divergente');
-        const pendentes = divergentes.filter(l => !l.confirmada);
-        alvo = pendentes.length > 0 ? pendentes : divergentes;
-      }
-
-      recontagemSkusAlvo = alvo.map(l => l.sku);
-
-      const wrap = document.getElementById('escopo-preview-wrap');
-      const tbody = document.getElementById('escopo-preview-tbody');
-      const vazio = document.getElementById('escopo-preview-vazio');
-      const contador = document.getElementById('escopo-preview-count');
-      wrap.classList.remove('hidden');
-
-      if (alvo.length === 0) {
-        tbody.innerHTML = '';
-        vazio.classList.remove('hidden');
-        contador.innerText = '';
-        document.getElementById('escopo-continuar-btn').disabled = true;
-        return;
-      }
-
-      vazio.classList.add('hidden');
-      tbody.innerHTML = alvo.map(l => `
-        <tr>
-          <td class="py-2 px-3 font-mono font-semibold text-slate-800">${l.sku}</td>
-          <td class="py-2 px-3 text-center">${l.contagens.length}</td>
-          <td class="py-2 px-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">${l.confirmada ? 'Divergência confirmada' : 'Divergente'}</span></td>
-        </tr>
-      `).join('');
-      contador.innerText = `${alvo.length} item${alvo.length > 1 ? 's' : ''} será${alvo.length > 1 ? 'ão' : ''} recontado${alvo.length > 1 ? 's' : ''}.`;
-      document.getElementById('escopo-continuar-btn').disabled = false;
-    }
-
-    function voltarParaDivergenciaDaEscopo() {
-      hideAllResultadoViews();
-      document.getElementById('resultado-divergencia').classList.remove('hidden');
-      document.getElementById('page-title').innerText = `Divergência - ${inventarioAtual.deposito.nome}`;
-    }
-
-    function continuarParaRecontagemNome() {
-      document.getElementById('resultado-recontagem-escopo').classList.add('hidden');
-      document.getElementById('resultado-recontagem-nome').classList.remove('hidden');
-      document.getElementById('page-title').innerText = `Nova Contagem - ${inventarioAtual.deposito.nome}`;
-      document.getElementById('recontagem-nome-form').reset();
-      document.getElementById('recontagem-nome-erro').classList.add('hidden');
     }
 
     function handleRecontagemNomeInput() {
@@ -4157,6 +4079,7 @@
       }
 
       // Regra: cada nova contagem precisa ser feita por OUTRA pessoa, nunca por quem já contou neste inventário.
+      // Regra: cada recontagem é feita por uma pessoa que ainda não contou este inventário.
       const jaContou = inventarioAtual.tentativas.find(tt => (tt.colaborador || '').trim().toLowerCase() === cadastrado.nome.trim().toLowerCase());
       if (jaContou) {
         erroBox.innerText = `${cadastrado.nome} já realizou uma contagem deste inventário. A próxima contagem precisa ser feita por outra pessoa.`;
@@ -4165,22 +4088,12 @@
       }
       erroBox.classList.add('hidden');
 
-      inventarioAtual.colaboradorAtual = cadastrado.nome;
-      inventarioAtual.dataInicioTentativa = new Date().toISOString();
-
-      // Reaproveita a última contagem física como base e remove só os itens que entraram no escopo
-      // da recontagem — assim o que não foi selecionado para recontar permanece como estava.
-      const ultimaTentativa = inventarioAtual.tentativas[inventarioAtual.tentativas.length - 1];
-      const baseAnterior = ultimaTentativa ? JSON.parse(JSON.stringify(ultimaTentativa.contagemFisica)) : [];
-      inventarioAtual.contagemFisica = baseAnterior.filter(item => !recontagemSkusAlvo.includes(item.produto));
-      inventarioAtual.escopoRecontagem = recontagemSkusAlvo.slice();
-
-      hideAllDepositoScreens();
-      document.getElementById('deposito-validar-fisico').classList.remove('hidden');
-      document.getElementById('page-title').innerText = `Contagem Física - ${inventarioAtual.deposito.nome}`;
-      document.getElementById('contagem-titulo').innerText = `${inventarioAtual.deposito.nome} (${inventarioAtual.deposito.codigo})`;
-      resetContagemStepSku();
-      renderContagemLista();
+      const skus = (inventarioAtual.selecaoRecontagem || []).slice();
+      if (!skus.length) { rcVoltarDoNome(); return; }
+      inventarioAtual.recontagem = { colaborador: cadastrado.nome, login: rcLoginSessao(), skus, qtd: {}, iniciada: false,
+        solicitadaPor: inventarioAtual.tentativas[0].colaborador, solicitadaEm: new Date().toISOString() };
+      inventarioAtual.fase = 'recontagem'; inventarioAtual.selecaoRecontagem = [];
+      mostrarRecontagemLista();
     }
 
     function finalizarComDivergencia() {
@@ -4194,7 +4107,7 @@
       document.getElementById('resultado-fim-tentativa').innerText = `${textoContagemVezes(inventarioAtual.tentativas.length)} • ${textoHorariosInventario(inventarioAtual.tentativas)}`;
       document.getElementById('page-title').innerText = `Finalizado - ${nomeDeposito}`;
       renderTabelaComparativa(linhas, 'resultado-fim-tbody', { ocultarSistema: true });
-      renderLogValidacoes('resultado-fim-log', inventarioAtual.tentativas);
+      renderLogValidacoes('resultado-fim-log', inventarioAtual.tentativas, inventarioAtual.dadosSistema);
       inventarioAtual = null;
     }
 
@@ -5624,6 +5537,7 @@
             invalidada: !!(validacao && validacao.decisao === 'principal'),
             numero: tentativa.numero || (idx + 1),
             colaborador: tentativa.colaborador,
+            login: tentativa.login || '',
             hora: info ? info.hora : null,
             fim: tentativa.dataFim,
             presente: !!info,
@@ -5677,10 +5591,29 @@
         // Contagem exibida: a que bateu com o sistema; senão a confirmada por duas contagens; senão a última válida.
         // Sem saldo no sistema, se alguém achou o produto e outro não, vale o que foi achado (sobra física, com RNC).
         const ultimaAchada = !sistemaInfo ? [...base].reverse().find(c => c.presente) : null;
-        const exibida = batida || confirmada || ultimaAchada || base[base.length - 1];
+        let exibida = batida || confirmada || ultimaAchada || base[base.length - 1];
 
         // Sem saldo no sistema e NENHUMA contagem válida achou o produto: nada a acertar.
         if (status === 'divergente' && (!sistemaInfo || sistemaQtd === 0) && base.every(c => !c.presente)) status = 'ok';
+
+        // REGRA DA RECONTAGEM (inventários novos): verde = bateu com o sistema ou com outra contagem; vale a verde
+        // (primeiro a que bate com o sistema, depois a que mais pessoas contaram igual); tudo vermelho = vale a do 1º contador.
+        if (tentativas[0] && tentativas[0].regra === 2) {
+          const val = c => (c.presente ? Number(c.quantidade) || 0 : 0);
+          const sv = sistemaInfo ? sistemaQtd : 0;
+          contagens.forEach(c => { c.bateuSistema = val(c) === sv; });
+          contagens.forEach(c => { c.bateuCom = contagens.filter(o => o !== c && val(o) === val(c)).map(o => o.numero); c.verde = c.bateuSistema || c.bateuCom.length > 0; });
+          const batida2 = contagens.find(c => c.bateuSistema);
+          let grupo = null;
+          if (!batida2) {
+            const porValor = new Map();
+            contagens.forEach(c => { const k = val(c); if (!porValor.has(k)) porValor.set(k, []); porValor.get(k).push(c); });
+            porValor.forEach(g => { if (g.length >= 2 && (!grupo || g.length > grupo.length)) grupo = g; });
+          }
+          status = naoContado ? 'nao-contado' : (batida2 ? 'ok' : 'divergente');
+          confirmada = grupo ? grupo[0] : null;
+          exibida = batida2 || (grupo && grupo[0]) || contagens[0];
+        }
 
         return {
           invalidado,
@@ -5891,10 +5824,10 @@
         const recontagens = l.contagens.slice(1);
         const marcadores = (recontagens.length && l.status !== 'nao-contado') || l.contagens.some(c => c.validacao)
           ? l.contagens.filter((c, i) => i > 0 || c.substituida).map(c => {
-              const bateu = c.bateuSistema;
-              const cor = bateu ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200';
-              const qtd = c.presente ? c.quantidade : 'vazio';
-              return `<button onclick="abrirHistoricoContagens('${tbodyId}', '${skuAttr}')" title="${c.numero - 1}ª recontagem por ${c.colaborador}: ${qtd}${bateu ? ' (bateu com o sistema)' : ' (não bateu)'}" class="inline-block mr-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${cor} whitespace-nowrap"><i class="fa-solid fa-rotate-right mr-1"></i>${c.numero}ª contagem: ${qtd} · ${c.colaborador}${c.invalidada ? ' (invalidada)' : c.substituida ? ' (substituída)' : c.validacao ? ' (aceita pelo principal)' : ''}</button>`;
+              const v2 = c.verde !== undefined, bateu = v2 ? c.verde : c.bateuSistema;
+              const cor = bateu ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : (v2 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-800 border-amber-200');
+              const qtd = c.presente ? c.quantidade : (v2 ? 0 : 'vazio');
+              return `<button onclick="abrirHistoricoContagens('${tbodyId}', '${skuAttr}')" title="${c.numero}ª contagem por ${escHtml(c.colaborador)}${c.login ? ' (login ' + escHtml(c.login) + ')' : ''}: ${qtd}${v2 ? ' (' + rcRotuloContagem(c) + ')' : (bateu ? ' (bateu com o sistema)' : ' (não bateu)')}" class="inline-block mr-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${cor} whitespace-nowrap"><i class="fa-solid fa-rotate-right mr-1"></i>${c.numero}ª contagem: ${qtd} · ${c.colaborador}${c.invalidada ? ' (invalidada)' : c.substituida ? ' (substituída)' : c.validacao ? ' (aceita pelo principal)' : ''}</button>`;
             }).join('')
           : '<span class="text-slate-300">-</span>';
 
@@ -6005,6 +5938,8 @@
           ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">Invalidada pelo principal</span>`
           : c.substituida
             ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-600">Substituída pela do colega</span>`
+            : c.verde !== undefined
+              ? `<span class="px-2 py-1 rounded-full text-xs font-semibold ${c.verde ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} whitespace-nowrap">${c.bateuSistema ? 'Bateu com o sistema' : (c.verde ? 'Igual à ' + c.bateuCom.map(x => x + 'ª').join(', ') : 'Não bateu')}</span>`
             : c.bateuSistema
               ? `<span class="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Bateu com o sistema</span>`
               : (c.validacao && c.validacao.decisao === 'colega'
@@ -6013,7 +5948,7 @@
         return `
           <tr>
             <td class="py-2 px-3 text-center text-slate-500">${c.numero}ª</td>
-            <td class="py-2 px-3 font-semibold text-slate-800">${c.colaborador}</td>
+            <td class="py-2 px-3 font-semibold text-slate-800">${escHtml(c.colaborador)}${c.login ? `<div class="text-[11px] font-normal text-slate-400">login ${escHtml(c.login)}</div>` : ''}</td>
             <td class="py-2 px-3 text-xs text-slate-500">${quando}</td>
             <td class="py-2 px-3 text-center font-bold ${ocultar ? 'hidden' : ''}">${c.presente ? c.quantidade : 'Vazio'}</td>
             <td class="py-2 px-3 text-center">${resultado}</td>
@@ -6030,7 +5965,7 @@
         const acao = c.presente
           ? `contou ${mostrarQtd ? c.quantidade + ' un.' : '(quantidade oculta)'} de <span class="font-mono">${escHtml(sku)}</span>`
           : `<b>não encontrou</b> o SKU <span class="font-mono">${escHtml(sku)}</span> (contagem vazia)`;
-        eventos.push(`<li><b>${c.numero}ª contagem</b> — ${escHtml(c.colaborador)} ${acao}${quando}.</li>`);
+        eventos.push(`<li><b>${c.numero}ª contagem</b> — ${escHtml(c.colaborador)}${c.login ? ` (login ${escHtml(c.login)})` : ''} ${acao}${quando}${c.verde !== undefined ? ` — <span class="${c.verde ? 'text-emerald-700' : 'text-rose-700'} font-semibold">${escHtml(rcRotuloContagem(c))}</span>` : ''}.</li>`);
         if (c.validacao) {
           eventos.push(`<li class="${c.validacao.decisao === 'colega' ? 'text-emerald-800' : 'text-rose-800'}"><i class="fa-solid fa-user-check mr-1"></i><b>Validação do contador principal:</b> ${escHtml(textoValidacao(sku, c.validacao))} <span class="text-slate-400">(${formatDateBR(c.validacao.em)} às ${formatHoraBR(c.validacao.em)})</span></li>`);
         }
@@ -6045,7 +5980,7 @@
         const valeTxt = linha.fisico === null ? 'nenhuma unidade encontrada' : `${linha.fisico} un.`;
         final = `Resultado final no inventário: <b>${valeTxt}</b>${linha.responsavel ? ` (contagem de ${escHtml(linha.responsavel)})` : ''}.`;
       }
-      const aviso = houveDiferenca && !validou && !linha.invalidado
+      const aviso = houveDiferenca && !validou && !linha.invalidado && !(linha.principal && linha.principal.verde !== undefined)
         ? `<li class="text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>Sem validação registrada:</b> as contagens diferem, mas o contador principal (${escHtml(principalNome)}) não registrou qual vale. Isso acontece em inventários finalizados antes da validação existir. Para decidir, refaça a contagem deste item.</li>`
         : '';
       eventos.push(aviso, `<li class="pt-1 border-t border-blue-50 text-slate-800">${final}</li>`);
@@ -6063,7 +5998,9 @@
       } else if (linha.confirmada) {
         msg = 'Divergência confirmada: duas contagens coincidem entre si, mas nenhuma bate com o sistema.';
       } else {
-        msg = 'Ainda há divergência: nenhuma contagem bateu com o sistema nem com outra contagem. É possível refazer a contagem ou seguir com a divergência.';
+        msg = linha.principal && linha.principal.verde !== undefined
+          ? 'Divergência: nenhuma contagem bateu com o sistema nem com outra contagem. Vale a contagem do 1º contador.'
+          : 'Ainda há divergência: nenhuma contagem bateu com o sistema nem com outra contagem. É possível refazer a contagem ou seguir com a divergência.';
       }
       document.getElementById('modal-recontagem-msg').innerText = msg;
       document.getElementById('modal-recontagem').classList.remove('hidden');
