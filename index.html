@@ -292,7 +292,11 @@
       </div>
     </div>
   </div>
-  <div id="nuvem-aviso" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[150] bg-amber-100 text-amber-900 border border-amber-300 rounded-xl shadow-lg px-4 py-2 text-xs font-semibold"><i class="fa-solid fa-cloud-arrow-down mr-1"></i><span id="nuvem-aviso-txt"></span><button id="nuvem-aviso-btn" class="ml-3 underline font-bold hover:text-amber-700">Atualizar agora</button></div>
+  <!-- Dados novos de outra pessoa: só uma bolinha no canto (passar o mouse mostra o aviso; clicar atualiza). Some durante inventário em andamento. -->
+  <div id="nuvem-aviso" class="hidden fixed bottom-3 right-3 z-[150]">
+    <button id="nuvem-aviso-btn" type="button" aria-label="Há dados novos. Clique para atualizar." class="block w-3.5 h-3.5 rounded-full bg-amber-400 ring-4 ring-amber-300/40 shadow hover:scale-125 transition-transform"></button>
+    <span id="nuvem-aviso-txt" class="sr-only"></span>
+  </div>
 
 
   <!-- Navigation Sidebar -->
@@ -2261,6 +2265,7 @@
       function verificarRecarga() {
         recargaTimer = null;
         if (!recargaPedida) return;
+        const av = $('nuvem-aviso'); if (av) av.classList.toggle('hidden', inventarioEmAndamento());   // durante inventário em andamento a bolinha some
         const parado = Date.now() - ultimaAtividade >= OCIOSO_MS;
         if (!inventarioEmAndamento() && (document.hidden || (parado && !telaOcupada(document)))) { recarregarAgora(true).then(ok => { if (!ok) recargaPedida = false; }); return; }
         recargaTimer = setTimeout(verificarRecarga, 3000);
@@ -2268,9 +2273,11 @@
       function recarregarQuandoPossivel(motivo) {
         const aviso = $('nuvem-aviso');
         if (aviso) {
-          aviso.classList.remove('hidden');
-          $('nuvem-aviso-txt').innerText = (motivo || 'Há dados novos.') + (inventarioEmAndamento() ? ' A tela atualiza quando o inventário em andamento terminar.' : ' A tela atualiza sozinha quando você parar de mexer.');
+          aviso.classList.toggle('hidden', inventarioEmAndamento());
+          const texto = (motivo || 'Há dados novos.') + (inventarioEmAndamento() ? ' A tela atualiza quando o inventário em andamento terminar.' : ' A tela atualiza sozinha quando você parar de mexer. Clique para atualizar agora.');
+          $('nuvem-aviso-txt').innerText = texto;
           const b = $('nuvem-aviso-btn');
+          if (b) b.title = texto;
           if (b && !b.__ok) {
             b.__ok = true;
             b.onclick = () => {
