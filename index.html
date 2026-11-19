@@ -273,10 +273,45 @@
       body.menu-recolhido > aside #logo-menu { left: 8px; }
     }
     @media (max-width: 767px) { body.menu-recolhido > aside { display: none; } }
+    /* MENU QUE ABRE AO PASSAR O MOUSE (computador com mouse): fica recolhido em ícones e abre por cima da tela,
+       sem empurrar o conteúdo; ao tirar o mouse, recolhe de novo. Em tela de toque continua o botão. */
+    @media (min-width: 768px) {
+      body.menu-auto { padding-left: 64px; }
+      body.menu-auto > aside { background-color: #0f2a4a; position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; overflow-y: auto; overflow-x: hidden; transition: width .16s ease, box-shadow .16s ease; }
+      body.menu-auto:not(.menu-recolhido) > aside { box-shadow: 10px 0 28px rgba(15, 23, 42, .28); }
+      body.menu-auto .sb-head > button[onclick="alternarMenuLateral()"] { display: none !important; }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col md:flex-row antialiased">
-  <script>if (localStorage.getItem('tbx_menu_recolhido') === '1') document.body.classList.add('menu-recolhido');</script>
+  <script>
+    // Menu lateral: com mouse (tela de computador) abre sozinho ao passar o cursor e recolhe ao sair; sem mouse (toque) segue o botão.
+    (function () {
+      var mq = window.matchMedia ? window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 768px)') : null;
+      var auto = !!(mq && mq.matches);
+      if (auto) document.body.classList.add('menu-auto', 'menu-recolhido');
+      else if (localStorage.getItem('tbx_menu_recolhido') === '1') document.body.classList.add('menu-recolhido');
+      var abrir = null, fechar = null;
+      function ligar() {
+        var aside = document.querySelector('body > aside'); if (!aside || aside.__menuAuto) return; aside.__menuAuto = true;
+        aside.addEventListener('mouseenter', function () {
+          if (!document.body.classList.contains('menu-auto')) return;
+          clearTimeout(fechar); abrir = setTimeout(function () { document.body.classList.remove('menu-recolhido'); }, 90);
+        });
+        aside.addEventListener('mouseleave', function () {
+          if (!document.body.classList.contains('menu-auto')) return;
+          clearTimeout(abrir);
+          fechar = setTimeout(function () { var m = document.getElementById('logo-menu'); if (m && !m.classList.contains('hidden')) m.classList.add('hidden'); document.body.classList.add('menu-recolhido'); }, 220);
+        });
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ligar); else ligar();
+      if (mq && mq.addEventListener) mq.addEventListener('change', function (e) {
+        document.body.classList.toggle('menu-auto', e.matches);
+        if (e.matches) document.body.classList.add('menu-recolhido');
+        else document.body.classList.toggle('menu-recolhido', localStorage.getItem('tbx_menu_recolhido') === '1');
+      });
+    })();
+  </script>
 
   <!-- NUVEM: tela de login (Google @grupotbx.com.br) e avisos -->
   <div id="nuvem-overlay" class="fixed inset-0 z-[200] bg-tbx-navy flex items-center justify-center p-6">
@@ -9144,6 +9179,7 @@
           if (!t) { esconder(); return; }
           var menu = null;
           for (var i = 0; i < RECOLHIDOS.length && !menu; i++) { var c = doc.querySelector(RECOLHIDOS[i]); if (c && c.contains(t)) menu = c; }
+          if (menu && doc.body.classList.contains('menu-auto') && menu.parentElement === doc.body) menu = null;   // menu principal abre sozinho: o nome já aparece
           var txt = menu ? nome(t) : '';
           if (!txt) { esconder(); return; }
           if (t === alvo) return; alvo = t;
