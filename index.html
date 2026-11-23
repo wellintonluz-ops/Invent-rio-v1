@@ -1330,7 +1330,7 @@
 
       <!-- SECTION: SEGREGADOS -->
       <section id="sec-segregados" class="hidden">
-        <p class="text-sm text-slate-500 mb-4 max-w-3xl">Depósito de itens com saldo, mas com peça faltando. Cada entrada é uma linha (1 unidade do SKU), mesmo que falte a mesma peça em várias.</p>
+        <p class="text-sm text-slate-500 mb-4 max-w-3xl">Depósito de itens com saldo, mas com peça faltando. Clique no SKU para ver a posição de cada unidade e as peças que faltam em cada uma.</p>
         <div class="flex flex-wrap gap-2 mb-4">
           <button onclick="sgAbrirEntrada()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700"><i class="fa-solid fa-arrow-right-to-bracket mr-1"></i> Registrar entrada</button>
           <button onclick="sgAbrirSaida()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-600 text-white hover:bg-rose-700"><i class="fa-solid fa-arrow-right-from-bracket mr-1"></i> Registrar saída</button>
@@ -1338,7 +1338,7 @@
         </div>
         <div class="flex flex-wrap items-center gap-2 mb-3">
           <input id="sg-filtro" oninput="sgRender()" onkeydown="if (event.key === 'Enter') sgVerEstrutura()" type="text" placeholder="Filtrar por SKU" data-sem-corretor class="w-full sm:w-64 border border-slate-300 rounded-lg p-2 text-sm font-mono uppercase">
-          <button onclick="sgVerEstrutura()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-tbx-navy text-white"><i class="fa-solid fa-magnifying-glass mr-1"></i> Ver o que tem / falta</button>
+          <button onclick="sgVerEstrutura()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-tbx-navy text-white"><i class="fa-solid fa-magnifying-glass mr-1"></i> Ver posição / faltantes</button>
           <button onclick="document.getElementById('sg-filtro').value = ''; sgRender()" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Limpar filtro</button>
         </div>
         <div id="sg-abas" class="flex flex-wrap gap-1 mb-3"></div>
@@ -1395,7 +1395,7 @@
         </div>
 
         <!-- Estrutura de um registro -->
-        <div id="modal-sg-detalhe" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) sgFechar('modal-sg-detalhe')">
+        <div id="modal-sg-detalhe" style="z-index:60" class="hidden fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) sgFechar('modal-sg-detalhe')">
           <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-2">
               <h3 class="text-base font-bold text-tbx-navy">Estrutura <span id="sg-det-sku" class="font-mono"></span></h3>
@@ -1411,10 +1411,10 @@
         </div>
 
         <!-- O que tem / falta por SKU -->
-        <div id="modal-sg-estrutura" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) sgFechar('modal-sg-estrutura')">
-          <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 max-h-[90vh] overflow-y-auto">
+        <div id="modal-sg-estrutura" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-2 sm:p-4" onclick="if (event.target === this) sgFechar('modal-sg-estrutura')">
+          <div class="bg-white rounded-xl shadow-xl w-full max-w-7xl p-5 sm:p-6 h-[94vh] overflow-y-auto" style="max-width:1280px;height:94vh">
             <div class="flex justify-between items-center mb-3">
-              <h3 class="text-base font-bold text-tbx-navy">O que tem e o que falta</h3>
+              <h3 class="text-lg font-bold text-tbx-navy">Posição e peças faltantes</h3>
               <button onclick="sgFechar('modal-sg-estrutura')" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div id="sg-est-corpo" class="space-y-5"></div>
@@ -6664,8 +6664,8 @@
     // Registro: { id, sku, data, colaborador, posicao, estrutura: [{ nome, falta }], criadoEm, saida: null | { data, colaborador, registradoEm } }
     const SG_KEY = 'tbx_segregados';
     let segregados = JSON.parse(localStorage.getItem(SG_KEY)) || [];
-    let sgAba = 'lista', sgDetalheId = null;
-    const SG_ABAS = { lista: 'Itens (1 linha por SKU)', total: 'Total por SKU', faltantes: 'Peças faltantes', historico: 'Histórico', hmov: 'Histórico de entradas e saídas', hinv: 'Histórico de inventário' };
+    let sgAba = 'total', sgDetalheId = null;
+    const SG_ABAS = { total: 'Total por SKU', faltantes: 'Peças faltantes', historico: 'Histórico', hmov: 'Histórico de entradas e saídas', hinv: 'Histórico de inventário' };
     const sgSalvar = () => localStorage.setItem(SG_KEY, JSON.stringify(segregados));
     async function sgApagarTudo() {
       alert('Apagar tudo foi desativado para proteger os dados. Para remover algo, apague registro por registro.'); return;
@@ -6766,20 +6766,13 @@
         <span class="px-3 py-1 rounded-full bg-rose-100 text-rose-800">${totalFalt} peça(s) faltando no total</span>`;
       const thead = document.getElementById('sg-thead'), tbody = document.getElementById('sg-tbody');
 
-      if (sgAba === 'lista') {
-        thead.innerHTML = '<tr>' + th('Entrada') + th('SKU') + th('Posição') + th('Colaborador') + th('Peças faltando') + '</tr>';
-        tbody.innerHTML = estoque.slice().sort(porData).map(r => `<tr class="hover:bg-blue-50/50">
-          <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">${sgDataBR(r.data)}</td><td class="py-2 px-3">${btnSku(r)}</td>
-          <td class="py-2 px-3">${escHtml(r.posicao)}</td><td class="py-2 px-3">${escHtml(r.colaborador)}</td>
-          <td class="py-2 px-3 text-xs text-rose-700">${falt(r)}</td></tr>`).join('') || vazio(5, 'Nenhum item no Segregados.');
-      } else if (sgAba === 'total') {
-        thead.innerHTML = '<tr>' + th('SKU') + th('Unidades', 'text-center') + th('Peças faltando (quantas unidades)') + th('Posições') + '</tr>';
-        tbody.innerHTML = grupos.map(g => `<tr class="hover:bg-blue-50/50">
-          <td class="py-2 px-3"><button data-sku="${escHtml(g.sku)}" onclick="sgVerEstrutura(this.dataset.sku)" class="font-mono font-semibold text-tbx-navy underline hover:text-blue-700">${escHtml(g.sku)}</button></td>
-          <td class="py-2 px-3 text-center font-bold">${g.un}${insMarca(g.aj)}</td>
-          <td class="py-2 px-3 text-xs text-rose-700">${Object.values(g.falt).sort((a, b) => b.qtd - a.qtd).map(f => `${escHtml(f.nome)} (${f.qtd})`).join(', ')}</td>
-          <td class="py-2 px-3 text-xs">${g.pos.map(escHtml).join(', ')}</td></tr>`).join('')
-          + (grupos.length ? `<tr class="bg-slate-50 font-bold"><td class="py-2 px-3">TOTAL</td><td class="py-2 px-3 text-center">${totalUn}</td><td class="py-2 px-3 text-xs text-rose-700">${totalFalt} peça(s) faltando</td><td></td></tr>` : vazio(4, 'Nenhum item no Segregados.'));
+      if (!SG_ABAS[sgAba]) sgAba = 'total';
+      if (sgAba === 'total') {
+        thead.innerHTML = '<tr>' + th('SKU') + th('Unidades', 'text-center') + '</tr>';
+        tbody.innerHTML = grupos.map(g => `<tr class="hover:bg-blue-50/50 cursor-pointer" data-sku="${escHtml(g.sku)}" onclick="sgVerEstrutura(this.dataset.sku)">
+          <td class="py-2 px-3"><span class="font-mono font-semibold text-tbx-navy underline">${escHtml(g.sku)}</span></td>
+          <td class="py-2 px-3 text-center font-bold">${g.un}${insMarca(g.aj)}</td></tr>`).join('')
+          + (grupos.length ? `<tr class="bg-slate-50 font-bold"><td class="py-2 px-3">TOTAL</td><td class="py-2 px-3 text-center">${totalUn}</td></tr>` : vazio(2, 'Nenhum item no Segregados.'));
       } else if (sgAba === 'faltantes') {
         thead.innerHTML = '<tr>' + th('SKU') + th('Peça que falta') + th('Unidades sem a peça', 'text-center') + th('Unidades do SKU', 'text-center') + '</tr>';
         const linhas = [];
@@ -6821,9 +6814,11 @@
       sgSalvar();
       sgFechar('modal-sg-detalhe');
       sgRender();
+      const est = document.getElementById('modal-sg-estrutura');
+      if (!est.classList.contains('hidden')) { if (sgEmEstoque().some(x => sgNorm(x.sku) === sgNorm(r.sku))) sgVerEstrutura(r.sku); else sgFechar('modal-sg-estrutura'); }
     }
 
-    // O que tem e o que falta de cada SKU em estoque, somando as unidades (SKU do filtro ou clicado)
+    // Visualização do SKU (clicar no SKU em "Total por SKU" ou "Ver posição / faltantes"): cada unidade em estoque com a posição e as peças que faltam nela.
     function sgVerEstrutura(skuExato) {
       const q = sgNorm(skuExato || document.getElementById('sg-filtro').value);
       if (!q) { alert('Digite o SKU no filtro (ou clique no SKU na aba "Total por SKU").'); return; }
@@ -6831,19 +6826,37 @@
       if (!un.length) { alert('Nenhuma unidade em estoque para esse SKU.'); return; }
       const porSku = {};
       un.forEach(r => (porSku[sgNorm(r.sku)] = porSku[sgNorm(r.sku)] || []).push(r));
+      const ajSeg = insAjusteDe('SEG');
+      const cmpPos = (a, b) => String(a.posicao || '').localeCompare(String(b.posicao || ''), 'pt-BR', { numeric: true }) || String(a.data).localeCompare(String(b.data));
       document.getElementById('sg-est-corpo').innerHTML = Object.keys(porSku).sort().map(k => {
-        const pecas = {};
-        porSku[k].forEach(r => r.estrutura.forEach(p => {
-          const c = pecas[sgChavePeca(p.nome)] = pecas[sgChavePeca(p.nome)] || { nome: p.nome, tem: 0, falta: 0 };
-          if (p.falta) c.falta++; else c.tem++;
-        }));
-        const linhas = Object.values(pecas).sort((a, b) => b.falta - a.falta || a.nome.localeCompare(b.nome, 'pt-BR')).map(c => `<tr>
-          <td class="py-2 px-2">${escHtml(c.nome)}</td>
-          <td class="py-2 px-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">${c.tem}</span></td>
-          <td class="py-2 px-2 text-center"><span class="px-2 py-1 rounded-full text-xs font-semibold ${c.falta ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'}">${c.falta}</span></td></tr>`).join('');
-        return `<div><div class="text-sm font-bold text-tbx-navy mb-1"><span class="font-mono">${escHtml(porSku[k][0].sku)}</span> <span class="font-normal text-slate-500">— ${porSku[k].length} unidade(s) em estoque</span></div>
-          <table class="w-full text-sm"><thead class="text-xs uppercase text-slate-500 border-b border-blue-100"><tr><th class="py-2 px-2 text-left">Peça</th><th class="py-2 px-2 text-center">Unidades que têm</th><th class="py-2 px-2 text-center">Unidades que faltam</th></tr></thead><tbody class="divide-y divide-blue-50">${linhas}</tbody></table></div>`;
-      }).join('');
+        const lista = porSku[k].slice().sort(cmpPos);
+        const posicoes = [...new Set(lista.map(r => r.posicao || '-'))];
+        const totFalt = {};
+        lista.forEach(r => sgFaltando(r).forEach(n => { const c = sgChavePeca(n); totFalt[c] = totFalt[c] || { nome: n, qtd: 0 }; totFalt[c].qtd++; }));
+        const resumoFalt = Object.values(totFalt).sort((a, b) => b.qtd - a.qtd || a.nome.localeCompare(b.nome, 'pt-BR'))
+          .map(f => `<span class="px-2 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-100">${escHtml(f.nome)} <b>(${f.qtd})</b></span>`).join(' ');
+        const aj = ajSeg[k] ? `<div class="text-xs text-amber-700 mt-1">Ajuste de inspeção: ${ajSeg[k] > 0 ? '+' : ''}${ajSeg[k]} unidade(s) sem registro individual (sem posição/peças).</div>` : '';
+        const linhas = lista.map((r, i) => {
+          const f = sgFaltando(r);
+          return `<tr class="hover:bg-blue-50/50 cursor-pointer align-top" onclick="sgDetalhe('${r.id}')" title="Abrir o registro">
+            <td class="py-2.5 px-3 text-slate-400 text-xs">${i + 1}</td>
+            <td class="py-2.5 px-3 font-bold text-tbx-navy whitespace-nowrap">${escHtml(r.posicao || '-')}</td>
+            <td class="py-2.5 px-3 text-rose-700">${f.length ? f.map(escHtml).join(', ') : '<span class="text-slate-400">Nenhuma</span>'}</td>
+            <td class="py-2.5 px-3 text-center font-semibold">${f.length}</td>
+            <td class="py-2.5 px-3 text-xs text-slate-500 whitespace-nowrap">${sgDataBR(r.data)}</td>
+            <td class="py-2.5 px-3 text-xs text-slate-500">${escHtml(r.colaborador || '')}</td></tr>`;
+        }).join('');
+        return `<div>
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+            <span class="font-mono text-xl font-bold text-tbx-navy">${escHtml(lista[0].sku)}</span>
+            <span class="text-sm text-slate-500">${lista.length} unidade(s) em estoque · ${posicoes.length} posição(ões): ${posicoes.map(escHtml).join(', ')}</span>
+          </div>
+          ${resumoFalt ? `<div class="flex flex-wrap gap-1.5 text-xs mb-3"><span class="text-slate-500 font-semibold py-1">Peças faltando no total:</span> ${resumoFalt}</div>` : ''}${aj}
+          <div class="border border-blue-100 rounded-lg overflow-x-auto">
+          <table class="w-full text-sm"><thead class="bg-blue-50/70 text-xs uppercase text-slate-500 border-b border-blue-100"><tr>
+            <th class="py-2 px-3 text-left w-10">#</th><th class="py-2 px-3 text-left">Posição</th><th class="py-2 px-3 text-left">Peças faltantes</th><th class="py-2 px-3 text-center">Qtd. peças</th><th class="py-2 px-3 text-left">Entrada</th><th class="py-2 px-3 text-left">Colaborador</th>
+          </tr></thead><tbody class="divide-y divide-blue-50">${linhas}</tbody></table></div></div>`;
+      }).join('<hr class="my-6 border-blue-100">');
       document.getElementById('modal-sg-estrutura').classList.remove('hidden');
     }
 
@@ -6915,7 +6928,7 @@
       });
       sgSalvar();
       sgFechar('modal-sg-entrada');
-      sgAba = 'lista';
+      sgAba = 'total';
       sgRender();
     }
 
