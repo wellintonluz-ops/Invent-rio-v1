@@ -2399,7 +2399,7 @@
           catch (e) { console.warn('nuvem:', e); iniciado = false; return tela('Não consegui sincronizar com a nuvem. Confira as regras do Firestore e a internet.', { erro: true, offline: true }); }
           esconderTela(); restaurarTela();
           $('nuvem-usuario').innerText = email; $('nuvem-bloco').classList.remove('hidden'); rodape('Nuvem: sincronizado', 'text-emerald-400');
-          adapter.ouvir(m => { if (String(m.key).startsWith('trava~')) { N.travas[m.key.slice(6)] = m.lk || null; try { if (typeof depRenderLista === 'function' && document.getElementById('deposito-menu') && !document.getElementById('deposito-menu').classList.contains('hidden')) depRenderLista(); } catch (e) {} return; } N.aplicarRemoto(m).catch(err => console.warn('nuvem:', err)); });
+          adapter.ouvir(m => { if (String(m.key).startsWith('trava~')) { N.travas[m.key.slice(6)] = m.lk || null; try { if (window.tbxSessaoAoMudar) tbxSessaoAoMudar(m.key.slice(6), m.lk || null); } catch (e) {} try { if (typeof depRenderLista === 'function' && document.getElementById('deposito-menu') && !document.getElementById('deposito-menu').classList.contains('hidden')) depRenderLista(); } catch (e) {} return; } N.aplicarRemoto(m).catch(err => console.warn('nuvem:', err)); });
           setInterval(() => N.varrer(), 2500);
           window.addEventListener('online', () => N.varrer());
         });
@@ -2535,7 +2535,10 @@
         const idAberta = aberta ? aberta.id.slice(4) : null;
         if (idAberta && idAberta !== 'depositos' && !idAberta.startsWith('dc-') && !usrPode(idAberta)) { try { switchTab('depositos'); } catch (e) {} }
       }
-      window.usrSair = () => { sessionStorage.removeItem(SESS); location.reload(); };
+      window.usrSair = async () => {
+        try { if (window.tbxSessaoLiberar) await Promise.race([tbxSessaoLiberar(), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
+        sessionStorage.removeItem(SESS); location.reload();
+      };
 
       // Mostra o login individual só depois que a tela do Google/nuvem sumiu.
       function ciclo() {
@@ -2646,6 +2649,110 @@
       };
     })();
     /* USUARIOS-FIM */
+  
+    // SESSÃO ÚNICA: o mesmo login só fica ativo em uma tela/aparelho por vez.
+    // Usa um documento "trava~sessao.<login>" na nuvem (igual à trava de depósito): a tela ativa renova a cada 45 s;
+    // sem renovação por 2 min a tela é considerada fechada. Quem entra com um login já aberto escolhe se usa esta tela (a outra é bloqueada).
+    (function () {
+      const TTL = 2 * 60 * 1000, RENOVAR = 45 * 1000;
+      const abaId = (() => { let id = ''; try { id = sessionStorage.getItem('tbx_aba_id'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); sessionStorage.setItem('tbx_aba_id', id); } } catch (e) { id = 'x' + Math.random().toString(36).slice(2); } return id; })();
+      let estado = 'livre', loginAtual = null, ultimo = 0, ocupado = false;   // estado: livre | perguntando | ativo | bloqueado
+      const loginSessao = () => { try { const x = JSON.parse(sessionStorage.getItem('tbx_usuario_sessao')); return (x && x.login) || null; } catch (e) { return null; } };
+      const nuvemPronta = () => { const n = window.NUVEM, o = document.getElementById('nuvem-overlay'); return !!(n && n.adapter && n.email && o && o.classList.contains('hidden')); };
+      const cod = l => 'sessao.' + l;
+      const aparelho = () => { const ua = navigator.userAgent; return /Android/i.test(ua) ? 'celular/tablet Android' : /iPhone|iPad/i.test(ua) ? 'iPhone/iPad' : /Windows/i.test(ua) ? 'computador Windows' : /Mac/i.test(ua) ? 'Mac' : 'outro aparelho'; };
+      const hora = ts => ts ? new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+      function janela() {
+        let m = document.getElementById('sessao-unica');
+        if (!m) {
+          m = document.createElement('div'); m.id = 'sessao-unica';
+          m.className = 'hidden fixed inset-0 bg-slate-900/80 flex items-center justify-center p-4';
+          m.style.zIndex = '400';
+          document.body.appendChild(m);
+        }
+        return m;
+      }
+      function mostrar(titulo, html, botoes) {
+        const m = janela();
+        m.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div class="bg-tbx-navy text-white px-5 py-4 font-bold flex items-center gap-2" style="background:#0f2a4a"><i class="fa-solid fa-user-lock"></i> ${titulo}</div>
+          <div class="p-5 space-y-3 text-sm text-slate-700 leading-relaxed">${html}</div>
+          <div class="px-5 pb-5 flex flex-col sm:flex-row gap-2">${botoes.map((b, i) => `<button data-i="${i}" class="flex-1 py-2.5 rounded-lg font-bold text-sm ${b.primario ? 'text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}" ${b.primario ? 'style="background:#0f2a4a"' : ''}>${b.txt}</button>`).join('')}</div></div>`;
+        m.querySelectorAll('button[data-i]').forEach(btn => { btn.onclick = () => botoes[+btn.dataset.i].acao(btn); });
+        m.classList.remove('hidden');
+      }
+      const fechar = () => janela().classList.add('hidden');
+      const descLk = lk => lk ? `${esc(lk.nome || 'outra tela')}${lk.desde ? `, aberta desde ${hora(lk.desde)}` : ''}` : 'outra tela';
+
+      async function tomar(btn) {
+        const N = window.NUVEM, l = loginAtual; if (!N || !N.adapter || !l) return;
+        if (btn) { btn.disabled = true; btn.innerText = 'Aguarde...'; }
+        try {
+          await N.adapter.liberar(cod(l), '', true);
+          const r = await N.adapter.travar(cod(l), abaId, l + ' · ' + aparelho(), TTL);
+          if (!r.ok) throw new Error('ocupado');
+          estado = 'ativo'; ultimo = Date.now(); fechar();
+        } catch (e) {
+          if (btn) { btn.disabled = false; btn.innerText = 'Tentar de novo'; }
+        }
+      }
+      function sair() { estado = 'saindo'; fechar(); if (window.usrSair) usrSair(); }
+
+      function perguntar(lk) {
+        estado = 'perguntando';
+        mostrar('Login já aberto em outra tela',
+          `<p>O login <strong>${esc(loginAtual)}</strong> já está aberto em outra tela ou aparelho (${descLk(lk)}).</p>
+           <p>O mesmo login só pode ficar aberto em <strong>uma tela por vez</strong>. Clique em <strong>OK</strong> para usar esta tela: a outra será bloqueada.</p>
+           <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">Se a outra tela estiver no meio de um inventário, termine lá antes.</p>`,
+          [{ txt: 'OK, usar esta tela', primario: true, acao: tomar }, { txt: 'Cancelar e sair', acao: sair }]);
+      }
+      async function bloquear(lk) {
+        if (estado === 'bloqueado') return;
+        estado = 'bloqueado';
+        try { if (window.TBXArmazem && TBXArmazem.salvarAgora) await TBXArmazem.salvarAgora(); } catch (e) {}
+        try { if (window.NUVEM && NUVEM.varrer) NUVEM.varrer(true); } catch (e) {}
+        mostrar('Esta tela foi bloqueada',
+          `<p>O login <strong>${esc(loginAtual)}</strong> foi aberto em outra tela ou aparelho (${esc(lk && lk.nome || 'outra tela')}${lk && lk.ts ? `, às ${hora(lk.ts)}` : ''}).</p>
+           <p>Para não ter dois acessos com o mesmo login ao mesmo tempo, esta tela foi bloqueada. O que você já fez aqui está salvo.</p>`,
+          [{ txt: 'Usar esta tela aqui', primario: true, acao: tomar }, { txt: 'Sair', acao: sair }]);
+      }
+
+      async function tick() {
+        if (ocupado || location.hash === '#nuvem-teste') return;
+        const l = loginSessao();
+        if (!l) { if (estado !== 'livre') { estado = 'livre'; fechar(); } loginAtual = null; return; }
+        if (l !== loginAtual) { loginAtual = l; estado = 'livre'; }
+        if (!nuvemPronta()) return;
+        const N = window.NUVEM;
+        if (estado === 'livre' || (estado === 'ativo' && Date.now() - ultimo > RENOVAR)) {
+          ocupado = true;
+          try {
+            const r = await N.adapter.travar(cod(l), abaId, l + ' · ' + aparelho(), TTL);
+            if (loginSessao() !== l) return;
+            if (r.ok) { estado = 'ativo'; ultimo = Date.now(); }
+            else if (estado === 'livre') perguntar(r.lk);
+            else bloquear(r.lk);
+          } catch (e) { /* sem conexão: tenta de novo no próximo ciclo */ }
+          finally { ocupado = false; }
+        }
+      }
+      setInterval(tick, 2000);
+
+      // Aviso na hora (pela nuvem) quando outra tela pega este login.
+      window.tbxSessaoAoMudar = function (codigo, lk) {
+        if (!loginAtual || codigo !== cod(loginAtual) || estado !== 'ativo') return;
+        if (lk && lk.dono !== abaId) bloquear(lk);
+      };
+      // Ao sair: libera o login para outra tela entrar sem aviso.
+      window.tbxSessaoLiberar = async function () {
+        const N = window.NUVEM, l = loginAtual || loginSessao();
+        if (!N || !N.adapter || !l || estado !== 'ativo') return;
+        try { await N.adapter.liberar(cod(l), abaId, false); } catch (e) {}
+      };
+      window.tbxSessaoEstado = () => ({ estado, login: loginAtual, aba: abaId });
+    })();
   </script>
 
   <script type="text/tbx-adiado">
