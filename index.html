@@ -4852,6 +4852,8 @@
     function cnDesfazerEntrada(invId, sku) {
       const inv = inventarios.find(i => i.id === invId);
       if (!inv || !inv.validacoes || !inv.validacoes[sku]) return;
+      const val = inv.validacoes[sku], movE = movimentos.find(m => m.id === val.movId);
+      if (movE && cnSaldoSku(movE.sku, movE.tipo) - (Number(movE.qtd) || 0) < 0) { alert(`Não dá para desfazer: parte desta entrada já saiu do saldo ${movE.tipo === 'fisico' ? 'físico' : 'sistema'} (saldo atual ${cnSaldoSku(movE.sku, movE.tipo)}). Desfazer deixaria o saldo negativo.`); return; }
       if (!confirm('Desfazer esta entrada? O movimento será removido do saldo e do histórico.')) return;
       const movId = inv.validacoes[sku].movId;
       movimentos = movimentos.filter(m => m.id !== movId); cnSalvarMov();
@@ -4885,6 +4887,11 @@
     let cnSaidaAlvo = null;
     function cnSaldoDe(dep, sku, tipo) {
       return movimentos.filter(m => m.sku === sku && m.tipo === tipo).reduce((s, m) => s + cnDelta(m), 0); // o saldo do inventário não é separado por depósito
+    }
+    // Mesmo saldo, sem diferenciar maiúsculas/minúsculas no SKU (para validar saídas digitadas).
+    function cnSaldoSku(sku, tipo) {
+      const k = String(sku || '').trim().toUpperCase();
+      return movimentos.filter(m => String(m.sku || '').trim().toUpperCase() === k && m.tipo === tipo).reduce((s, m) => s + cnDelta(m), 0);
     }
     function cnAbrirSaida(dep, sku, tipo) {
       cnPreencherSelects();
@@ -5118,7 +5125,12 @@
       const sku = document.getElementById('cn-man-sku').value.trim().toUpperCase();
       const qtd = parseInt(document.getElementById('cn-man-qtd').value, 10);
       const operacao = document.getElementById('cn-man-operacao').value, dpr = dpkLer('cn-man-dep'), depOut = dpr.dep || '';
-      const msg = !resp ? 'Selecione o responsável.' : !sku ? 'Informe o produto (SKU).' : !(qtd > 0) ? 'Informe uma quantidade maior que zero.' : !dpkSkuOk(sku) ? 'Produto não cadastrado. Cadastre o SKU em Cadastro antes.' : !dpr.ok ? dpr.erro : !cnRncAtual('man') ? cnRncMsg : '';
+      // Saída precisa ter saldo: só sai o que entrou antes (no mesmo saldo, físico ou sistema).
+      const tipoMan = document.getElementById('cn-man-tipo').value, saldoMan = cnSaldoSku(sku, tipoMan), nomeTipo = tipoMan === 'fisico' ? 'físico' : 'sistema';
+      const msgSaida = operacao !== 'saida' || !sku || !(qtd > 0) ? ''
+        : saldoMan <= 0 ? `Não há saldo ${nomeTipo} de ${sku} para dar saída. A saída precisa estar ligada a algo que entrou no saldo ${nomeTipo}.`
+        : qtd > saldoMan ? `A saída não pode ser maior que o saldo ${nomeTipo} de ${sku} (${saldoMan}).` : '';
+      const msg = !resp ? 'Selecione o responsável.' : !sku ? 'Informe o produto (SKU).' : !(qtd > 0) ? 'Informe uma quantidade maior que zero.' : !dpkSkuOk(sku) ? 'Produto não cadastrado. Cadastre o SKU em Cadastro antes.' : msgSaida ? msgSaida : !dpr.ok ? dpr.erro : !cnRncAtual('man') ? cnRncMsg : '';
       if (msg) { erro.innerText = msg; erro.classList.remove('hidden'); return; }
       erro.classList.add('hidden');
       movimentos.push({
@@ -5510,6 +5522,8 @@
     function vdDesfazer(tipo, sku) {
       const s = vdSessao(); if (!s || s.fim) return;
       const it = s.itens[tipo + '|' + sku]; if (!it) return;
+      const movV = it.movId && movimentos.find(m => m.id === it.movId);
+      if (movV && movV.operacao === 'entrada' && cnSaldoSku(movV.sku, movV.tipo) - (Number(movV.qtd) || 0) < 0) { alert(`Não dá para desfazer: parte desta entrada já saiu do saldo (saldo atual ${cnSaldoSku(movV.sku, movV.tipo)}). Desfazer deixaria o saldo negativo.`); return; }
       if (!confirm(it.movId ? 'Desfazer esta conferência? O ajuste será removido do saldo e do histórico.' : 'Desfazer o OK deste item?')) return;
       if (it.movId) { movimentos = movimentos.filter(m => m.id !== it.movId); cnSalvarMov(); }
       delete s.itens[tipo + '|' + sku];
