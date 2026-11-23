@@ -410,7 +410,7 @@
           <span class="sidebar-label">Cadastro</span>
         </button>
 
-        <button onclick="switchTab('inventarios-feitos')" id="nav-inventarios-feitos" class="nav-btn w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-white/5 hover:text-white transition-all duration-200">
+        <button onclick="switchTab('inventarios-feitos')" id="nav-inventarios-feitos" style="display:none" class="nav-btn w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-white/5 hover:text-white transition-all duration-200">
           <i class="fa-solid fa-calendar-check w-5 h-5 mr-3 flex items-center justify-center text-slate-400"></i>
           <span class="sidebar-label">Inventários feitos</span>
         </button>
@@ -1243,6 +1243,8 @@
 
       <!-- SECTION 2: VISUALIZAÇÃO DE INVENTÁRIO (antigo Controle de Inventário) -->
       <section id="sec-controle-inventario" class="hidden">
+        <div id="vis-abas" class="flex flex-wrap gap-2 mb-4"></div>
+        <div id="vis-feitos" class="hidden"><div id="if-conteudo"></div></div>
 
         <!-- Controle de Inventário: Visualização de Inventário -->
         <div id="controle-visualizacao-inventario" class="hidden">
@@ -1644,7 +1646,7 @@
       </section>
 
       <!-- SECTION: INVENTÁRIOS FEITOS (por dia, um botão por depósito) -->
-      <section id="sec-inventarios-feitos" class="hidden"><div id="if-conteudo"></div></section>
+      <section id="sec-inventarios-feitos" class="hidden"></section>
 
       <!-- SECTION 3: OPÇÕES -->
       <section id="sec-opcoes" class="hidden">
@@ -2292,7 +2294,7 @@
         try {
           const tab = TABS_APP().find(t => !document.getElementById('sec-' + t).classList.contains('hidden')) || '';
           const main = document.querySelector('main'), y = main ? main.scrollTop : 0;
-          sessionStorage.setItem('tbx_nuvem_tela', JSON.stringify({ tab, y }));
+          sessionStorage.setItem('tbx_nuvem_tela', JSON.stringify({ tab, y, sub: tab === 'controle-inventario' ? window.visAba : '' }));
         } catch (e) {}
       }
       function restaurarTela() {
@@ -2300,7 +2302,9 @@
         if (!s) return;
         try {
           const atual = TABS_APP().find(t => !document.getElementById('sec-' + t).classList.contains('hidden'));
+          if (s.sub) window.visAba = s.sub;
           if (s.tab && s.tab !== atual && typeof switchTab === 'function' && document.getElementById('nav-' + s.tab)) switchTab(s.tab);
+          else if (s.tab === 'controle-inventario' && s.sub && typeof visIrAba === 'function') visIrAba(s.sub);
           const main = document.querySelector('main'); if (main && s.y) setTimeout(() => { main.scrollTop = s.y; }, 80);
         } catch (e) {}
       }
@@ -2411,7 +2415,7 @@
     (function () {
       const ADM_LOGIN = 'murilo.h', ADM_NOME = 'Murilo Henrique Santos Barboza', SENHA_PADRAO = '123qwe', KEY = 'tbx_usuarios', SESS = 'tbx_usuario_sessao';
       // Telas controláveis (id = o de switchTab). Inventário ('depositos') é de todos; Usuários é só de ADM.
-      const TELAS = [['controle-inventario', 'Visualização'], ['controle-novo', 'Controle'], ['segregados', 'Segregados'], ['mpchp', 'MP.CHP'], ['adm-at', 'ADM.AT'], ['avaria-ind', 'Indicador de Avaria'], ['plataforma', 'Plataforma'], ['opcoes', 'Cadastro'], ['inventarios-feitos', 'Inventários feitos']];
+      const TELAS = [['controle-inventario', 'Visualização'], ['controle-novo', 'Controle'], ['segregados', 'Segregados'], ['mpchp', 'MP.CHP'], ['adm-at', 'ADM.AT'], ['avaria-ind', 'Indicador de Avaria'], ['plataforma', 'Plataforma'], ['opcoes', 'Cadastro'], ['inventarios-feitos', 'Inventários feitos (dentro da Visualização)']];
       const nz = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '').toLowerCase();
       const loginDe = nome => { const p = String(nome || '').trim().split(/\s+/).filter(Boolean); if (!p.length) return ''; const a = nz(p[0]), b = p[1] ? nz(p[1]).charAt(0) : ''; return b ? a + '.' + b : a; };
       const colabs = () => { try { return JSON.parse(localStorage.getItem('tbx_colaboradores')) || []; } catch (e) { return []; } };
@@ -2440,6 +2444,15 @@
         if (!s) return location.hash === '#nuvem-teste';
         if (tab === 'depositos' || ehAdm(s.login)) return true;
         if (tab === 'usuarios') return false;
+        const r = ler()[s.login], t = (r && r.telas) || {};
+        if (tab === 'controle-inventario') return t['controle-inventario'] === true || t['inventarios-feitos'] === true;
+        return t[tab] === true;
+      };
+      // Permissão exata de uma tela (sem juntar Visualização e Inventários feitos): usada nas abas da Visualização
+      window.usrPodeTela = function (tab) {
+        const s = sessao();
+        if (!s) return location.hash === '#nuvem-teste';
+        if (ehAdm(s.login)) return true;
         const r = ler()[s.login];
         return !!(r && r.telas && r.telas[tab] === true);
       };
@@ -2900,7 +2913,7 @@
             <button onclick="indMoverDia(1)" title="Próximo dia" class="w-9 h-9 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-chevron-right"></i></button>
             <button onclick="indSetDia(indDiaRelGlobal(-1))" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Ontem</button>
             <button onclick="indSetDia(indDiaRelGlobal(0))" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Hoje</button>
-            <button onclick="indToggleDiv()" title="Mostra só as divergências de todos os depósitos deste dia" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoDiv ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Filtrar divergências</button>
+            <button onclick="indToggleDiv()" title="${indSoDiv ? 'Clique para voltar a ver por depósito' : 'Mostra só as divergências de todos os depósitos deste dia'}" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoDiv ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 ring-2 ring-offset-1 ring-rose-300' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid ${indSoDiv ? 'fa-filter-circle-xmark' : 'fa-triangle-exclamation'} mr-1.5"></i>${indSoDiv ? 'Só divergências: ligado (clique para desligar)' : 'Filtrar divergências'}</button>
             <span class="ml-auto text-xs text-slate-500">${nomes.length ? `${nVistos} de ${nomes.length} depósito${nomes.length > 1 ? 's' : ''} já visto${nVistos === 1 ? '' : 's'}` : ''}</span>
           </div>
           ${nomes.length ? `<div class="mt-4 flex flex-wrap gap-2">${botoes}</div>` : '<div class="mt-4 bg-white rounded-xl border border-blue-100 p-8 text-center text-sm text-slate-400">Nenhum inventário finalizado neste dia.</div>'}
@@ -2908,7 +2921,7 @@
         if (linhas !== null) { if (indFeitosFiltroReset) { indFeitosFiltroReset = false; xfIniciar('ind-feitos-tbody'); } else xfRefresh('ind-feitos-tbody'); }
       }
       window.indDiaRelGlobal = indDiaRel;
-      window.indToggleDiv = function () { indSoDiv = !indSoDiv; indDepSel = null; indFeitosFiltroReset = true; indRender(); };
+      window.indToggleDiv = function () { indSoDiv = !indSoDiv; indDepSel = null; indFeitosFiltroReset = true; indFeitosRefaz(); };
       window.indSetDia = function (v) { if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '')) return; indDia = v; indDepSel = null; indFeitosFiltroReset = true; indFeitosRefaz(); };
       window.indMoverDia = function (n) { const [a, m, d] = (indDia || indDiaRel(-1)).split('-').map(Number), dt = new Date(a, m - 1, d + n); indSetDia(indYmd(dt)); };
       window.indAbrirDepFeito = function (nome) {
@@ -2919,7 +2932,7 @@
         try { localStorage.setItem('tbx_inv_vistos', JSON.stringify(vistos)); } catch (e) {}
         indFeitosRefaz();
       };
-      window.indRefreshFeitos = function () { const s = $('sec-inventarios-feitos'); if (s && !s.classList.contains('hidden')) indFeitosRefaz(); };
+      window.indRefreshFeitos = function () { const s = $('sec-controle-inventario'), f = $('vis-feitos'); if (s && f && !s.classList.contains('hidden') && !f.classList.contains('hidden')) indFeitosRefaz(); };
 
       // Menu lateral dos Indicadores: cada item é uma tela (Análise tabela geral, Inventários feitos, Ação...). "Ação" fica separada porque vai valer para várias telas de indicadores.
       function indPintarNav() {
@@ -3158,6 +3171,7 @@
     // TAB NAVIGATION
     function switchTab(tabId) {
       if (invTrava() && !invRestaurando) { invAviso(); return; }
+      if (tabId === 'inventarios-feitos') { window.visAba = 'feitos'; tabId = 'controle-inventario'; }
       if (window.usrPode && !usrPode(tabId)) return;
       const tabs = ['depositos', 'controle-inventario', 'controle-novo', 'segregados', 'adm-at', 'dc-az', 'dc-at', 'opcoes', 'mpchp', 'avaria-ind', 'plataforma', 'usuarios', 'inventarios-feitos'];
       const titles = {
@@ -3201,7 +3215,6 @@
       if (tabId === 'avaria-ind') avAbrir();
       if (tabId === 'plataforma') platAbrir();
       if (tabId === 'usuarios') usrRender();
-      if (tabId === 'inventarios-feitos' && window.ifAbrir) ifAbrir();
     }
 
     // DEPÓSITOS: SUB-NAVIGATION & ACESSO
@@ -5029,8 +5042,20 @@
     }
 
     // CONTROLE DE INVENTÁRIO: SUB-NAVIGATION
+    // A Visualização tem duas abas: Depósitos (inventários por depósito) e Inventários feitos (por dia, com o filtro de divergências).
+    window.visAba = window.visAba || 'depositos';
+    function visIrAba(a) { window.visAba = a === 'feitos' ? 'feitos' : 'depositos'; openControleScreen(); }
     function openControleScreen() {
-      document.getElementById('controle-visualizacao-inventario').classList.remove('hidden');
+      const pode = t => !window.usrPodeTela || usrPodeTela(t);
+      const podeDep = pode('controle-inventario'), podeFeitos = pode('inventarios-feitos');
+      if (window.visAba === 'feitos' && !podeFeitos) window.visAba = 'depositos';
+      if (window.visAba !== 'feitos' && !podeDep && podeFeitos) window.visAba = 'feitos';
+      const feitos = window.visAba === 'feitos';
+      const btn = (a, icone, txt) => `<button onclick="visIrAba('${a}')" class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${window.visAba === a ? 'bg-tbx-navy text-white border-tbx-navy' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}"><i class="fa-solid ${icone} mr-1.5"></i>${txt}</button>`;
+      document.getElementById('vis-abas').innerHTML = (podeDep ? btn('depositos', 'fa-warehouse', 'Por depósito') : '') + (podeFeitos ? btn('feitos', 'fa-calendar-check', 'Inventários feitos') : '');
+      document.getElementById('vis-feitos').classList.toggle('hidden', !feitos);
+      document.getElementById('controle-visualizacao-inventario').classList.toggle('hidden', feitos);
+      if (feitos) { document.getElementById('page-title').innerText = 'Visualização de Inventário · Inventários feitos'; if (window.ifAbrir) ifAbrir(); return; }
       document.getElementById('page-title').innerText = 'Visualização de Inventário';
       document.getElementById('visualizacao-detalhe').classList.add('hidden');
       document.getElementById('visualizacao-itens').classList.add('hidden');
