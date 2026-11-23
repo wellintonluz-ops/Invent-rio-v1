@@ -618,7 +618,7 @@
             <button onclick="backToDepositoAcesso()" class="text-sm font-semibold text-tbx-navy hover:text-tbx-red transition-colors flex items-center"><i class="fa-solid fa-arrow-left mr-2"></i> Voltar</button>
             <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm">
               <h2 id="pp-titulo" class="text-lg font-bold text-slate-800">Porta-palete</h2>
-              <p class="text-sm text-slate-500 mt-1 mb-4">Suba a planilha do sistema (colunas <strong>Localização</strong>, <strong>SKU</strong> e <strong>Quantidade</strong>). Depois escolha a rua que vai contar.</p>
+              <p class="text-sm text-slate-500 mt-1 mb-4">Suba a planilha do sistema (colunas <strong>Localização</strong>, <strong>SKU</strong> e <strong>Quantidade</strong>). Depois escolha a rua que vai contar. A mesma planilha serve para contar outras ruas; para recontar uma rua já contada, suba uma planilha nova.</p>
               <input type="file" id="pp-arquivo" accept=".xlsx,.xls" class="hidden" onchange="ppUpload(this.files[0]); this.value=''">
               <div class="flex flex-wrap items-center gap-3">
                 <button onclick="document.getElementById('pp-arquivo').click()" class="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50"><i class="fa-solid fa-file-excel mr-2 text-emerald-600"></i>Subir planilha do sistema</button>
@@ -655,7 +655,6 @@
               <div class="flex flex-wrap gap-2">
                 <button onclick="ppColunaDelta(-1)" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">‹ Coluna anterior</button>
                 <button onclick="ppColunaDelta(1)" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Próxima coluna ›</button>
-                <button onclick="ppVazias()" id="pp-btn-vazias" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50" title="Confirma como vazias as posições vazias desta coluna que ainda não foram contadas">Confirmar vazias da coluna</button>
                 <button onclick="ppEncerrar()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"><i class="fa-solid fa-flag-checkered mr-1"></i> Encerrar inventário</button>
                 <button onclick="ppCancelarVazio()" title="Só é possível cancelar se nada foi contado" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Cancelar (sem contagens)</button>
               </div>
@@ -8615,15 +8614,20 @@
     let ppSessaoId = null, ppAguardandoVazia = false;
 
     const ppSalvar = () => localStorage.setItem('tbx_pp_contagens', JSON.stringify(ppSessoes));
-    // A planilha do sistema vale para UM inventário só: ao encerrar, ela fica "usada" e é obrigatório subir uma versão nova (diferente) para o próximo.
+    // A planilha do sistema pode ser mantida para contar outras ruas; cada rua só pode ser contada uma vez com a mesma planilha
+    // (para contar de novo uma rua já contada é preciso subir uma planilha nova).
     const ppSis = () => { const r = ppSistemaTodos[selectedDeposito.nome]; return r && !r.usada ? r : null; };
+    // Ruas já encerradas com a planilha atual
+    const ppRuasUsadas = r => !r ? [] : [...new Set(ppSessoes.filter(x => x.deposito === selectedDeposito.nome && x.fim && (x.planilhaData ? x.planilhaData === r.data : x.inicio >= r.data)).map(x => x.rua))].sort();
+    function ppManterPlanilha() {
+      const r = ppUltimaSis(); if (!r) return;
+      r.usada = false; delete r.usadaEm;
+      localStorage.setItem('tbx_pp_sistema', JSON.stringify(ppSistemaTodos));
+      ppMsg('Planilha mantida. Escolha outra rua para contar.');
+      ppRenderSetup();
+    }
     const ppUltimaSis = () => ppSistemaTodos[selectedDeposito.nome] || null;
     const ppAssinatura = linhas => linhas.map(l => l[0] + '|' + l[1] + '|' + l[2]).join(';');
-    (function () {   // planilhas que já foram usadas em inventários encerrados (antes desta regra) também ficam "usadas"
-      let mudou = false;
-      Object.keys(ppSistemaTodos).forEach(nome => { const r = ppSistemaTodos[nome]; if (r && !r.usada && ppSessoes.some(s => s.deposito === nome && s.fim && s.inicio >= r.data)) { r.usada = true; mudou = true; } });
-      if (mudou) localStorage.setItem('tbx_pp_sistema', JSON.stringify(ppSistemaTodos));
-    })();
     const ppAtiva = () => ppSessoes.find(s => s.deposito === selectedDeposito.nome && !s.fim);
     const ppSessao = () => ppSessoes.find(s => s.id === ppSessaoId);
     const ppEhPortaPalete = nome => { const d = depositosCad.find(x => x.nome === nome); return !!(d && d.portaPalete); };
@@ -8676,15 +8680,20 @@
 
     function ppRenderSetup() {
       const sis = ppSis(), ativa = ppAtiva(), ult = ppUltimaSis();
-      document.getElementById('pp-arquivo-info').innerText = !sis && ult && ult.usada ? `A planilha anterior (${ult.arquivo}) já foi usada em um inventário. Para fazer o próximo é OBRIGATÓRIO subir uma planilha nova do sistema.` : sis ? `${sis.arquivo} · ${sis.linhas.length} posições na planilha · ${sis.linhas.filter(l => l[1]).length} com produto · enviada em ${formatDateBR(sis.data)}` : 'Nenhuma planilha enviada ainda. É obrigatório subir a planilha do sistema (nova a cada inventário) para ver os SKUs de cada rua.';
+      const usadas = ppRuasUsadas(sis || ult);
+      document.getElementById('pp-arquivo-info').innerHTML = !sis && ult && ult.usada
+        ? `A planilha <b>${escHtml(ult.arquivo)}</b> já foi usada${usadas.length ? ` (ruas ${usadas.map(r => 'PP' + r).join(', ')})` : ''}. Para contar <b>outra rua</b> você pode mantê-la: <button onclick="ppManterPlanilha()" class="ml-1 px-3 py-1 rounded-lg text-xs font-semibold bg-tbx-navy text-white hover:opacity-90">Manter esta planilha</button><br><span class="text-slate-400">Ou suba uma planilha nova do sistema.</span>`
+        : sis ? `${escHtml(sis.arquivo)} · ${sis.linhas.length} posições na planilha · enviada em ${formatDateBR(sis.data)}${usadas.length ? ` · já contadas com ela: ${usadas.map(r => 'PP' + r).join(', ')}` : ''}` : 'Nenhuma planilha carregada.';
       document.getElementById('pp-andamento').classList.toggle('hidden', !ativa);
       if (ativa) document.getElementById('pp-andamento-txt').innerText = `Contagem em andamento: rua PP${ativa.rua} · ${Object.keys(ativa.itens).length} de ${ativa.sis.length} posições contadas · responsável ${ativa.responsavel}`;
       const mostrarEscolha = !!sis && !ativa;
       document.getElementById('pp-escolha').classList.toggle('hidden', !mostrarEscolha);
       if (mostrarEscolha) {
         const sel = document.getElementById('pp-rua'), v = sel.value;
-        sel.innerHTML = ppRuas().map(r => `<option value="${r.rua}">PP${r.rua}</option>`).join('');
-        if (v) sel.value = v;
+        const usadasSel = ppRuasUsadas(sis);
+        sel.innerHTML = ppRuas().map(r => `<option value="${r.rua}"${usadasSel.includes(r.rua) ? ' disabled' : ''}>PP${r.rua}${usadasSel.includes(r.rua) ? ' · já contada com esta planilha' : ''}</option>`).join('');
+        if (v && !usadasSel.includes(v)) sel.value = v;
+        else { const livre = [...sel.options].find(o => !o.disabled); if (livre) sel.value = livre.value; }
         ppRenderSkus();
       }
     }
@@ -8721,7 +8730,7 @@
           if (!linhas.length) { ppMsg('Não encontrei nenhuma posição no formato PP01.01.01.A na coluna Localização.'); return; }
           linhas.sort((a, b) => ppCmp(a[0], b[0]));
           const assin = ppAssinatura(linhas), ult = ppUltimaSis();
-          if (ult && ult.usada && (ult.assinatura || ppAssinatura(ult.linhas)) === assin) { ppMsg('Esta é a MESMA planilha do inventário anterior (' + ult.arquivo + '). Exporte e suba uma versão nova do sistema.'); return; }
+          if (ult && (ult.assinatura || ppAssinatura(ult.linhas)) === assin) { ult.usada = false; delete ult.usadaEm; localStorage.setItem('tbx_pp_sistema', JSON.stringify(ppSistemaTodos)); ppMsg('Esta é a mesma planilha que já estava carregada: ela foi mantida (as ruas já contadas com ela continuam bloqueadas).'); ppRenderSetup(); return; }
           ppSistemaTodos[selectedDeposito.nome] = { arquivo: file.name, data: new Date().toISOString(), linhas, assinatura: assin, usada: false };
           try { localStorage.setItem('tbx_pp_sistema', JSON.stringify(ppSistemaTodos)); }
           catch (e) { alert('Não consegui guardar a planilha: o espaço do navegador está cheio. Baixe um backup ("Baixar tudo") e apague dados antigos.'); return; }
@@ -8737,6 +8746,7 @@
       if (!selectedDeposito.colaborador) { ppMsg('Identifique-se primeiro (volte e informe seu nome).'); return; }
       const rua = document.getElementById('pp-rua').value, pos = ppLinhasDe(rua);
       if (!pos.length) return;
+      if (ppRuasUsadas(sis).includes(rua)) { ppMsg(`A rua PP${rua} já foi contada com esta planilha. Para contar de novo, suba uma planilha nova do sistema.`); return; }
       if (!(await depLockAdquirir(selectedDeposito.codigo))) return;
       if (ppAtiva()) return;
       const s = { id: Date.now().toString() + Math.random().toString(36).slice(2, 6), deposito: selectedDeposito.nome, codigo: selectedDeposito.codigo, responsavel: selectedDeposito.colaborador, rua, inicio: new Date().toISOString(), fim: null, sis: pos, itens: {}, atual: 0, planilhaData: sis.data };
@@ -8778,7 +8788,6 @@
       document.getElementById('pp-c-titulo').innerText = `Rua PP${s.rua} · Coluna ${col}`;
       document.getElementById('pp-c-info').innerText = `Coluna ${colunas.indexOf(col) + 1} de ${colunas.length} · ${feitas} de ${pos.length} posições contadas · responsável ${s.responsavel}`;
       const daCol = pos.map((p, k) => ({ p, k })).filter(x => ppParte(x.p[0], 1) === col);
-      document.getElementById('pp-btn-vazias').classList.toggle('hidden', !daCol.some(x => !x.p[1] && !s.itens[x.p[0]]));
       document.getElementById('pp-colunas').innerHTML = colunas.map(c => {
         const ps = pos.filter(p => ppParte(p[0], 1) === c), contadas = ps.filter(p => s.itens[p[0]]).length, comErro = ps.some(p => ppErro(s.itens[p[0]], p));
         const cor = c === col ? 'bg-tbx-navy text-white border-tbx-navy' : comErro ? 'bg-rose-100 text-rose-700 border-rose-300' : contadas === ps.length ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : contadas ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-white text-slate-500 border-slate-200';
@@ -8788,7 +8797,7 @@
         const atual = k === s.atual, it = s.itens[p[0]], erro = ppErro(it, p);
         return `<button onclick="ppIr(${k})" class="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border text-left transition-all ${atual ? 'bg-tbx-navy text-white border-tbx-navy shadow-lg' : erro ? 'bg-rose-50 border-rose-400 text-rose-700' : 'bg-white border-blue-100 opacity-40 hover:opacity-70'}">
           <span class="font-mono font-bold text-sm">${escHtml(p[0])}</span>
-          <span class="flex-1 text-sm truncate ${atual ? 'text-white' : erro ? 'text-rose-700 font-semibold' : 'text-slate-600'}">${p[1] ? escHtml(p[1]) : '<em>vazia</em>'}${it && it.hist && it.hist.length ? ' <span class="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">recontada</span>' : ''}</span>
+          <span class="flex-1 text-sm truncate ${atual ? 'text-white' : erro ? 'text-rose-700 font-semibold' : 'text-slate-600'}">${it ? (it.st === 'vazia' ? '<em>vazia</em>' : escHtml(it.sku) + ' · ' + it.qtd) : ''}${it && it.hist && it.hist.length ? ' <span class="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">recontada</span>' : ''}</span>
           <span>${ppIcone(it)}</span></button>`;
       }).join('');
       const foco = document.getElementById('pp-foco');
@@ -8797,30 +8806,35 @@
         return;
       }
       const it = s.itens[cur[0]], m = cur[0].match(PP_RE);
-      const reg = it ? `<p class="text-xs font-semibold text-slate-500 mt-3">Já registrado: ${it.st === 'vazia' ? 'posição vazia' : escHtml(it.sku) + ' · ' + it.qtd} (${it.st === 'ok' ? 'bate com o sistema' : it.st === 'div' ? 'não bate' : it.st === 'sku' ? 'SKU diferente' : 'vazia'}). Registrar de novo substitui.</p>` : '';
-      const corpo = cur[1]
-        ? `<form onsubmit="ppConfirmar(event)" class="mt-4">
-             <label class="block text-xs font-semibold text-slate-600 mb-1">Quantidade contada</label>
-             <input id="pp-qtd" type="number" min="0" step="1" required class="w-full border-2 border-slate-300 rounded-xl p-3 text-2xl font-bold text-center focus:outline-none focus:border-tbx-navy">
+      const reg = it ? `<p class="text-xs font-semibold text-slate-500 mt-3">Já registrado: ${it.st === 'vazia' ? 'posição vazia' : escHtml(it.sku) + ' · ' + it.qtd}. Registrar de novo substitui.</p>` : '';
+      // Contagem às cegas: a tela mostra só a posição; quem conta informa o SKU que está lá e a quantidade (ou marca vazia).
+      const corpo = `<form onsubmit="ppConfirmar(event)" class="mt-4" autocomplete="off">
+             <label class="block text-xs font-semibold text-slate-600 mb-1">SKU encontrado na posição</label>
+             <input id="pp-sku" list="pp-cat-skus" type="text" data-sem-corretor autocomplete="off" placeholder="Digite o SKU" onkeydown="if (event.key === 'Enter') { event.preventDefault(); document.getElementById('pp-qtd').focus(); }" class="w-full border-2 border-slate-300 rounded-xl p-3 text-xl font-bold font-mono uppercase text-center focus:outline-none focus:border-tbx-navy">
+             <label class="block text-xs font-semibold text-slate-600 mt-3 mb-1">Quantidade contada</label>
+             <input id="pp-qtd" type="number" min="1" step="1" class="w-full border-2 border-slate-300 rounded-xl p-3 text-2xl font-bold text-center focus:outline-none focus:border-tbx-navy">
+             <p id="pp-erro" class="hidden text-xs text-rose-600 mt-2"></p>
              <div class="flex flex-wrap gap-2 mt-3">
                <button type="submit" class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700"><i class="fa-solid fa-check mr-1"></i> Confirmar</button>
-               <button type="button" onclick="ppAbrirSku()" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-violet-300 text-violet-700 hover:bg-violet-50">SKU incorreto</button>
                <button type="button" onclick="ppVazia()" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50">Posição vazia</button>
-             </div></form>`
-        : `<p class="text-sm text-slate-500 mt-4">O sistema diz que esta posição está vazia.</p>
-           <div class="flex flex-wrap gap-2 mt-3">
-             <button onclick="ppVazia()" class="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700">Está vazia</button>
-             <button onclick="ppAbrirSku()" class="px-4 py-2.5 rounded-lg text-sm font-semibold border border-violet-300 text-violet-700 hover:bg-violet-50">Tem produto</button>
-           </div>`;
+             </div></form>`;
+      ppCatalogoSkus();
       foco.innerHTML = `<div class="bg-white rounded-xl border-2 border-tbx-navy shadow-lg p-6">
         <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Posição atual</p>
         <h3 class="text-2xl font-extrabold text-slate-800 font-mono mt-1">${escHtml(cur[0])}</h3>
         <p class="text-sm text-slate-500">Rua ${+m[1]} · Coluna ${+m[2]} · Altura ${+m[3]} · Lado ${m[4]}</p>
-        <div class="mt-4 p-4 rounded-xl bg-blue-50 text-center"><p class="text-xs font-semibold text-slate-500">SKU</p><p class="text-2xl font-extrabold text-tbx-navy font-mono">${cur[1] ? escHtml(cur[1]) : 'Posição vazia'}</p></div>
         ${corpo}${reg}
         <button onclick="ppAnterior()" class="mt-4 text-xs font-semibold text-slate-500 hover:underline">← posição anterior</button></div>`;
-      const q = document.getElementById('pp-qtd'); if (q) setTimeout(() => q.focus(), 30);
+      const sk = document.getElementById('pp-sku'); if (sk) setTimeout(() => sk.focus(), 30);
     }
+    // Sugestões ao digitar: todos os SKUs do cadastro (nunca o SKU da posição).
+    function ppCatalogoSkus() {
+      let dl = document.getElementById('pp-cat-skus');
+      if (!dl) { dl = document.createElement('datalist'); dl.id = 'pp-cat-skus'; document.body.appendChild(dl); }
+      if (dl.dataset.ok) return;
+      try { dl.innerHTML = getCatalogoProdutosAtual().map(x => `<option value="${escHtml(x.sku)}"></option>`).join(''); dl.dataset.ok = '1'; } catch (e) {}
+    }
+
 
     // Colunas da rua (2º número): dá para pular para qualquer coluna sem contar a atual inteira.
     const ppColunas = s => [...new Set(s.sis.map(p => ppParte(p[0], 1)))];
@@ -8854,8 +8868,13 @@
     function ppConfirmar(e) {
       e.preventDefault();
       const s = ppSessao(); if (!s) return;
-      const cur = s.sis[s.atual], q = parseInt(document.getElementById('pp-qtd').value, 10);
-      if (!cur || isNaN(q) || q < 0) return;
+      const cur = s.sis[s.atual]; if (!cur) return;
+      const sku = document.getElementById('pp-sku').value.trim().toUpperCase(), q = parseInt(document.getElementById('pp-qtd').value, 10), erro = document.getElementById('pp-erro');
+      const msg = !sku ? 'Informe o SKU que está na posição (ou clique em Posição vazia).' : (isNaN(q) || q <= 0) ? 'Informe a quantidade contada (maior que zero).' : '';
+      if (msg) { erro.innerText = msg; erro.classList.remove('hidden'); (sku ? document.getElementById('pp-qtd') : document.getElementById('pp-sku')).focus(); return; }
+      const skuSis = String(cur[1] || '').trim().toUpperCase();
+      if (!skuSis) { ppDecidir('sku', sku, q, 'O sistema não indica produto nesta posição.'); return; }
+      if (sku !== skuSis) { ppDecidir('sku', sku, q, 'O SKU informado não confere com o sistema para esta posição.'); return; }
       if (q === cur[2]) { ppRegistrar('ok', cur[1], q); return; }
       ppDecidir('div', cur[1], q, `Você contou ${q}, mas a quantidade não confere com o sistema.`);
     }
@@ -8869,7 +8888,9 @@
     }
     function ppDivNova() {
       document.getElementById('modal-pp-div').classList.add('hidden'); ppPend = null;
-      const q = document.getElementById('pp-qtd'); if (q) { q.value = ''; q.focus(); }
+      const q = document.getElementById('pp-qtd'), k = document.getElementById('pp-sku');
+      if (q) q.value = '';
+      if (k) { k.value = ''; k.focus(); }
     }
     function ppDivManter() {
       const p = ppPend; document.getElementById('modal-pp-div').classList.add('hidden'); ppPend = null;
@@ -8881,16 +8902,6 @@
       const cur = s.sis[s.atual]; if (!cur) return;
       if (cur[1]) { ppDecidir('vazia', '', 0, 'A posição está vazia, mas o sistema indica produto nela.'); return; }
       ppRegistrar('vazia', '', 0);
-    }
-
-    // Confirma como vazias todas as posições vazias (no sistema) da coluna atual que ainda não foram contadas.
-    function ppVazias() {
-      const s = ppSessao(); if (!s) return;
-      const ref = s.sis[Math.min(s.atual, s.sis.length - 1)], col = ppParte(ref[0], 1);
-      let n = 0;
-      s.sis.forEach(p => { if (ppParte(p[0], 1) === col && !p[1] && !s.itens[p[0]]) { s.itens[p[0]] = { st: 'vazia', sku: '', qtd: 0, hora: new Date().toISOString() }; n++; } });
-      if (s.sis[s.atual] && s.itens[s.sis[s.atual][0]]) { let k = s.atual; while (k < s.sis.length && s.itens[s.sis[k][0]]) k++; s.atual = k; }
-      ppSalvar(); ppRenderContar();
     }
 
     function ppAbrirSku() {
@@ -8948,8 +8959,6 @@
       });
       localStorage.setItem('tbx_inventarios', JSON.stringify(inventarios));
       s.fim = fim; s.invId = invId; ppSalvar();
-      const usada = ppSistemaTodos[s.deposito];   // este inventário consumiu a planilha: o próximo exige uma nova
-      if (usada && (!s.planilhaData || usada.data === s.planilhaData)) { usada.usada = true; usada.usadaEm = fim; localStorage.setItem('tbx_pp_sistema', JSON.stringify(ppSistemaTodos)); }
       ppMostrarResumo(s, detalhes, tentativa.resultado);
     }
 
@@ -8970,7 +8979,7 @@
         ${linhas.length ? `<div class="overflow-x-auto border border-blue-100 rounded-lg"><table class="w-full text-sm"><thead class="bg-blue-50/70 text-xs uppercase text-slate-500"><tr><th class="py-2 px-3 text-left">Posição</th><th class="py-2 px-3 text-left">SKU sistema</th><th class="py-2 px-3 text-center">Qtd sistema</th><th class="py-2 px-3 text-left">SKU contado</th><th class="py-2 px-3 text-center">Qtd contada</th></tr></thead><tbody class="divide-y divide-blue-50">${linhas.map(d => `<tr><td class="py-2 px-3 font-mono font-semibold">${escHtml(d.loc)}</td><td class="py-2 px-3 font-mono">${d.skuSis ? escHtml(d.skuSis) : 'Posição vazia'}</td><td class="py-2 px-3 text-center">${d.skuSis ? d.qtdSis : 'X'}</td><td class="py-2 px-3 font-mono">${d.st === 'vazia' ? 'Posição vazia' : escHtml(d.skuFis)}</td><td class="py-2 px-3 text-center font-bold">${d.st === 'vazia' ? 'X' : d.qtdFis}</td></tr>`).join('')}</tbody></table></div>` : ''}
         ${detalhes.some(d => d.hist && d.hist.length) ? `<div class="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900"><p class="font-semibold mb-1">Posições recontadas</p>${detalhes.filter(d => d.hist && d.hist.length).map(d => `<p class="text-xs"><span class="font-mono font-semibold">${escHtml(d.loc)}</span>: ${ppTextoHist(d)}</p>`).join('')}</div>` : ''}
         <div class="flex flex-wrap justify-center gap-2 mt-5">
-          <button onclick="ppVerSetup()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90">Contar outra rua</button>
+          <button onclick="ppVerSetup()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90">Contar outra rua (mesma planilha)</button>
           <button onclick="backDepositoMenu()" class="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Voltar para Inventário</button></div>`;
     }
 
