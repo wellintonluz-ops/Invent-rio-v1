@@ -1446,12 +1446,14 @@
               <p class="text-xs text-blue-200 mt-1">Gere novos documentos para controle de fluxo de cargas.</p>
             </div>
             <div class="p-6 space-y-6">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Código (SKU) *</label>
-                  <input id="am-c-sku" list="am-skus" onchange="amAoMudarSku()" type="text" placeholder="Selecione o SKU" autocomplete="off" data-sem-corretor class="w-full border border-slate-300 rounded-lg p-2.5 text-sm font-mono uppercase">
-                  <datalist id="am-skus"></datalist><p id="am-c-skumsg" class="hidden text-xs mt-1"></p></div>
-                <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quantidade *</label>
-                  <input id="am-c-qtd" type="text" placeholder="Ex: 250 Unidades" data-sem-corretor class="w-full border border-slate-300 rounded-lg p-2.5 text-sm"></div>
+              <div>
+                <div class="grid grid-cols-[1fr_1fr_2.25rem] gap-2 mb-1">
+                  <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Código (SKU) *</label>
+                  <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Quantidade *</label><span></span>
+                </div>
+                <div id="am-c-itens" class="space-y-2"></div>
+                <datalist id="am-skus"></datalist>
+                <button type="button" onclick="amAddItem()" class="mt-2 text-xs font-bold text-tbx-navy border border-dashed border-blue-300 hover:bg-blue-50 rounded-lg px-3 py-2"><i class="fa-solid fa-plus mr-1"></i> Adicionar outro SKU neste documento</button>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Setor Solicitante <i class="fa-solid fa-lock ml-1 text-slate-400"></i></label><select id="am-c-setor" disabled class="w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-slate-100 text-slate-700 font-semibold cursor-not-allowed"></select><p class="text-[10px] text-slate-400 mt-1">Preenchido sozinho com o setor do solicitante no Cadastro de Colaboradores.</p></div>
@@ -6999,14 +7001,26 @@
     let insAjustes = JSON.parse(localStorage.getItem(INS_KEY)) || [];
     const insSalvar = () => localStorage.setItem(INS_KEY, JSON.stringify(insAjustes));
     const INS_NOMES = { SEG: 'Segregados (SEG.AT)', ADM: 'ADM.AT' };
-    // Quantidade da ficha que continua no depósito (a ficha original não é alterada; as saídas por inventário ficam em f.removidos).
-    const amQtdEf = f => (Number(f.qtd) || 0) - (f.removidos || []).reduce((n, x) => n + (Number(x.qtd) || 0), 0);
+    // Um documento do ADM.AT pode ter vários SKUs: f.itens = [{ sku, quantidade (texto), qtd (número) }].
+    // Fichas antigas (1 SKU) não têm itens: valem f.sku / f.quantidade / f.qtd.
+    const amItens = f => (Array.isArray(f.itens) && f.itens.length) ? f.itens : [{ sku: f.sku, quantidade: f.quantidade, qtd: Number(f.qtd) || 0 }];
+    // Quantidade de um SKU do documento que continua no depósito (o documento não é alterado; as saídas por inventário ficam em f.removidos,
+    // cada uma com o SKU; as antigas, sem SKU, são do 1º item).
+    const amQtdItem = (f, sku) => {
+      const k = sgNorm(sku), it = amItens(f);
+      const base = it.filter(i => sgNorm(i.sku) === k).reduce((n, i) => n + (Number(i.qtd) || 0), 0);
+      const saiu = (f.removidos || []).filter(x => sgNorm(x.sku || it[0].sku) === k).reduce((n, x) => n + (Number(x.qtd) || 0), 0);
+      return base - saiu;
+    };
+    // Quantidade total do documento que continua no depósito (todos os SKUs).
+    const amQtdEf = f => amItens(f).reduce((n, i) => n + (Number(i.qtd) || 0), 0) - (f.removidos || []).reduce((n, x) => n + (Number(x.qtd) || 0), 0);
+    const amSkusTxt = f => amItens(f).map(i => i.sku).join(', ');
     let insLocal = null, insAba = 'sis', insColado = null, insFis = {}, insAlvo = null, insEnv = null;
 
     function insBase(local) {
       const m = {};
       if (local === 'SEG') sgEmEstoque().forEach(r => { const k = sgNorm(r.sku); m[k] = (m[k] || 0) + 1; });
-      else fichasAdm.filter(amNoDeposito).forEach(f => { const k = sgNorm(f.sku); m[k] = (m[k] || 0) + amQtdEf(f); });
+      else fichasAdm.filter(amNoDeposito).forEach(f => amItens(f).forEach(i => { const k = sgNorm(i.sku); m[k] = (m[k] || 0) + amQtdItem(f, i.sku); }));
       return m;
     }
     function insAjusteDe(local) {
@@ -7233,11 +7247,11 @@
             <span><span class="font-semibold">Posição ${escHtml(r.posicao)}</span> · entrada ${sgDataBR(r.data)} · ${escHtml(r.colaborador)}<br><span class="text-xs text-rose-700">Falta: ${escHtml(sgFaltando(r).join(', ') || '—')}</span></span></label>`).join('')
             || '<p class="text-xs text-slate-400 p-2">Não há unidades individuais deste SKU no Segregados.</p>';
         } else {
-          const fs = fichasAdm.filter(f => amNoDeposito(f) && sgNorm(f.sku) === sku && amQtdEf(f) > 0).sort((a, b) => String(a.dataEntrada).localeCompare(String(b.dataEntrada)));
+          const fs = fichasAdm.filter(f => amNoDeposito(f) && amQtdItem(f, sku) > 0).sort((a, b) => String(a.dataEntrada).localeCompare(String(b.dataEntrada)));
           document.getElementById('ins-e-unid-rot').innerText = `Informe de qual(is) ficha(s) saem as ${qtd} unidade(s) (total deve ser ${qtd}):`;
           document.getElementById('ins-e-lista').innerHTML = fs.map(f => `<div class="flex items-center justify-between gap-3 p-2 rounded-lg hover:bg-slate-50 text-sm">
-            <span><span class="font-mono font-semibold text-tbx-navy">${escHtml(f.id)}</span> · entrada ${sgDataBR(f.dataEntrada)} · ${escHtml(f.solicitante || '')}<br><span class="text-xs text-slate-500">${escHtml(f.localizacaoProduto || '')} — ${amQtdEf(f)} un. na ficha</span></span>
-            <input type="number" min="0" max="${amQtdEf(f)}" step="1" value="0" data-ficha="${f.id}" class="w-20 border border-slate-300 rounded-lg p-1.5 text-sm text-center"></div>`).join('')
+            <span><span class="font-mono font-semibold text-tbx-navy">${escHtml(f.id)}</span> · entrada ${sgDataBR(f.dataEntrada)} · ${escHtml(f.solicitante || '')}<br><span class="text-xs text-slate-500">${escHtml(f.localizacaoProduto || '')} — ${amQtdItem(f, sku)} un. deste SKU na ficha</span></span>
+            <input type="number" min="0" max="${amQtdItem(f, sku)}" step="1" value="0" data-ficha="${f.id}" class="w-20 border border-slate-300 rounded-lg p-1.5 text-sm text-center"></div>`).join('')
             || '<p class="text-xs text-slate-400 p-2">Não há fichas deste SKU dentro do depósito.</p>';
         }
       }
@@ -7277,7 +7291,7 @@
         } else {
           porFicha = [...document.querySelectorAll('#ins-e-lista input[data-ficha]')].map(i => ({ id: i.dataset.ficha, qtd: parseInt(i.value, 10) || 0 })).filter(x => x.qtd > 0);
           const tot = porFicha.reduce((n, x) => n + x.qtd, 0);
-          const passou = porFicha.find(x => { const f = fichasAdm.find(y => y.id === x.id); return !f || x.qtd > amQtdEf(f); });
+          const passou = porFicha.find(x => { const f = fichasAdm.find(y => y.id === x.id); return !f || x.qtd > amQtdItem(f, e.sku); });
           if (passou) msg = `A ficha ${passou.id} não tem ${passou.qtd} unidade(s) disponíveis.`;
           else if (tot !== e.qtd) msg = `Distribua exatamente ${e.qtd} unidade(s) entre as fichas (informadas: ${tot}).`;
         }
@@ -7288,7 +7302,7 @@
       const agora = new Date().toISOString(), hoje = sgHoje();
       const unidades = [], fichasUsadas = [];
       ids.forEach(id => { const r = segregados.find(x => x.id === id); if (r) { r.saida = { data: hoje, colaborador: resp, registradoEm: agora, destino: 'INV.AT', motivo: 'inspecao', obs }; unidades.push(r); } });
-      porFicha.forEach(x => { const f = fichasAdm.find(y => y.id === x.id); f.removidos = (f.removidos || []).concat({ qtd: x.qtd, data: agora, responsavel: resp, origem: 'inspecao', destino: 'INV.AT', obs }); fichasUsadas.push({ id: x.id, qtd: x.qtd }); });
+      porFicha.forEach(x => { const f = fichasAdm.find(y => y.id === x.id); f.removidos = (f.removidos || []).concat({ sku: e.sku, qtd: x.qtd, data: agora, responsavel: resp, origem: 'inspecao', destino: 'INV.AT', obs }); fichasUsadas.push({ id: x.id, qtd: x.qtd }); });
       const sku = e.sku, qtd = e.qtd, tipo = e.tipo, sigla = seg ? 'SEG.AT' : 'ADM.AT';
       const dadosSistema = tipo === 'sistema' ? [{ id: '', locacao: sigla, produto: sku, disponivel: String(qtd), bloqueado: '', emAuditoria: '', naoContado: false }] : [];
       const contagemFisica = tipo === 'fisico' ? [{ produto: sku, quantidade: qtd, hora: formatHoraBR(agora), vezes: 1, naoContado: false, locacao: sigla }] : [];
@@ -7369,13 +7383,13 @@
           if (r.saida) ev.push({ quando: r.saida.registradoEm || r.saida.data, sku: r.sku, tipo: 'Saída', qtd: 1, quem: r.saida.colaborador, det: `${r.saida.destino ? 'Enviado à Validação do ' + r.saida.destino + ' (inspeção). ' : ''}Posição ${r.posicao}. Faltava: ${sgFaltando(r).join(', ') || '—'}${r.saida.obs ? '. ' + r.saida.obs : ''}` });
         });
       } else {
-        fichasAdm.forEach(f => {
+        fichasAdm.forEach(f => amItens(f).forEach(it => {
           const base = `Ficha ${f.id}${f.finalidade ? ' — ' + f.finalidade : ''}. Solicitante: ${f.solicitante || '—'}${f.setorSolicitante ? ' (' + f.setorSolicitante + ')' : ''}. ${f.permanece || ''}${f.localizacaoProduto ? ' (' + f.localizacaoProduto + ')' : ''}`;
           if (f.status === 'entregue') {
-            ev.push({ quando: f.dataEntrada || f.criadoEm, sku: f.sku, tipo: 'Entrada', qtd: f.qtd, quem: `Devolvido por ${f.devolvidoPor || '—'} · Recebido por ${f.recebidoPor || '—'}`, det: `${base}. Devolvido em ${dh(f.dataHoraDevolvido)}; recebido em ${dh(f.dataHoraRecebido)}.` });
-            ev.push({ quando: f.dataFinalizacao || f.atualizadoEm || f.criadoEm, sku: f.sku, tipo: 'Saída', qtd: f.qtd, quem: `Aprovado por ${f.aprovadoPor || '—'} · Retirado por ${f.retiradoPor || '—'}`, det: `Ficha ${f.id} entregue (finalizada): saída automática do depósito. Aprovado em ${dh(f.dataHoraAprovado)}; retirado em ${dh(f.dataHoraRetirada)}. Devolvido por ${f.devolvidoPor || '—'}; recebido por ${f.recebidoPor || '—'}.${f.destinoFinal === 'venda' ? ` Destino: SAIU COM VENDA (NF ${f.nfVenda}).` : f.destinoFinal === 'estoque' ? ' Destino: devolvido ao estoque.' : ''}` });
-          } else ev.push({ quando: f.dataEntrada || f.criadoEm, sku: f.sku, tipo: 'Entrada', qtd: f.qtd, quem: f.solicitante || '', det: `${base}. Ficha pendente (ainda não finalizada).` });
-        });
+            ev.push({ quando: f.dataEntrada || f.criadoEm, sku: it.sku, tipo: 'Entrada', qtd: Number(it.qtd) || 0, quem: `Devolvido por ${f.devolvidoPor || '—'} · Recebido por ${f.recebidoPor || '—'}`, det: `${base}. Devolvido em ${dh(f.dataHoraDevolvido)}; recebido em ${dh(f.dataHoraRecebido)}.` });
+            ev.push({ quando: f.dataFinalizacao || f.atualizadoEm || f.criadoEm, sku: it.sku, tipo: 'Saída', qtd: Number(it.qtd) || 0, quem: `Aprovado por ${f.aprovadoPor || '—'} · Retirado por ${f.retiradoPor || '—'}`, det: `Ficha ${f.id} entregue (finalizada): saída automática do depósito. Aprovado em ${dh(f.dataHoraAprovado)}; retirado em ${dh(f.dataHoraRetirada)}. Devolvido por ${f.devolvidoPor || '—'}; recebido por ${f.recebidoPor || '—'}.${f.destinoFinal === 'venda' ? ` Destino: SAIU COM VENDA (NF ${f.nfVenda}).` : f.destinoFinal === 'estoque' ? ' Destino: devolvido ao estoque.' : ''}` });
+          } else ev.push({ quando: f.dataEntrada || f.criadoEm, sku: it.sku, tipo: 'Entrada', qtd: Number(it.qtd) || 0, quem: f.solicitante || '', det: `${base}. Ficha pendente (ainda não finalizada).` });
+        }));
       }
       insAjustes.filter(a => a.local === local).forEach(a => {
         const res = a.tipo === 'vazio-ok' ? 'OK (nada / vazio)' : a.tipo === 'envio-fisico' ? 'Saiu (físico) → INV.AT' : a.tipo === 'envio-sistema' ? 'Enviado (sistema) → INV.AT' : a.tipo === 'mantido' ? 'Ficou no estoque' : (a.operacao === 'saida' ? 'Ajuste de saída' : 'Ajuste de entrada');
@@ -7386,10 +7400,12 @@
 
     // Estoque do ADM.AT item a item: 1 linha por unidade, cada uma ligada à ficha de entrada.
     function insHtmlEstoque() {
-      const fs = amBusca(fichasAdm.filter(amNoDeposito)).filter(f => amQtdEf(f) > 0).sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR') || String(a.id).localeCompare(String(b.id)));
       const q = document.getElementById('am-filtro').value.trim().toUpperCase();
+      const pares = [];
+      amBusca(fichasAdm.filter(amNoDeposito)).forEach(f => amItens(f).forEach(it => { if (amQtdItem(f, it.sku) > 0 && (!q || amBuscaBate(f, q) && (!amItens(f).some(x => sgNorm(x.sku).includes(q)) || sgNorm(it.sku).includes(q)))) pares.push({ f, sku: it.sku }); }));
+      pares.sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR') || String(a.f.id).localeCompare(String(b.f.id)));
       const linhas = [];
-      fs.forEach(f => { const n = Math.max(1, Math.round(amQtdEf(f))); for (let i = 1; i <= n; i++) linhas.push({ sku: f.sku, f, i, n }); });
+      pares.forEach(({ f, sku }) => { const n = Math.max(1, Math.round(amQtdItem(f, sku))); for (let i = 1; i <= n; i++) linhas.push({ sku, f, i, n }); });
       const aj = insAjusteDe('ADM'), semFicha = [];
       Object.keys(aj).filter(k => aj[k] > 0 && (!q || k.includes(q))).sort().forEach(k => { for (let i = 1; i <= aj[k]; i++) semFicha.push(k); });
       const th = insTh;
@@ -7563,7 +7579,7 @@
       recebimento: { campo: 'assinaturaRecebimentoDigital', nome: f => f.recebidoPor, titulo: 'Recebimento' }
     };
     const AM_GUIA = [
-      'Clique em "Criar Novo Documento" e preencha SKU, quantidade, setor solicitante, solicitante, finalidade e data de entrada.',
+      'Clique em "Criar Novo Documento" e preencha SKU, quantidade, setor solicitante, solicitante, finalidade e data de entrada. Para colocar mais de um SKU no mesmo documento, use "Adicionar outro SKU neste documento".',
       'Escolha se o produto permanecerá "Dentro do depósito" (informando onde está localizado), "Retirado da empresa" ou "Sob responsabilidade do Solicitante".',
       'Indique quem vai retirar e quem aprova a saída.',
       'Ao gerar o documento, o pad de assinatura digital abre automaticamente para colher as assinaturas de quem vai retirar e de quem aprova.',
@@ -7602,8 +7618,9 @@
     const amProximoId = () => 'ADM-' + String(fichasAdm.reduce((m, f) => Math.max(m, parseInt(String(f.id).replace(/\D/g, ''), 10) || 0), 0) + 1).padStart(4, '0');
     const amBusca = lista => {
       const q = document.getElementById('am-filtro').value.trim().toUpperCase();
-      return q ? lista.filter(f => [f.id, f.sku, f.solicitante, f.setorSolicitante].some(v => String(v).toUpperCase().includes(q))) : lista;
+      return q ? lista.filter(f => amBuscaBate(f, q)) : lista;
     };
+    const amBuscaBate = (f, q) => [f.id, f.solicitante, f.setorSolicitante].concat(amItens(f).map(i => i.sku)).some(v => String(v).toUpperCase().includes(q));
     const amFicha = () => fichasAdm.find(f => f.id === amSel);
 
     function amIr(aba) {
@@ -7636,11 +7653,14 @@
         <span class="px-3 py-1 rounded-full bg-amber-100 text-amber-800">${fichasAdm.filter(f => f.status === 'pendente').length} ficha(s) pendente(s)</span>
         <span class="px-3 py-1 rounded-full bg-slate-100 text-slate-700">${fichasAdm.filter(f => f.status === 'entregue').length} ficha(s) entregue(s)</span>`;
       const g = {};
-      amBusca(noDep).filter(f => amQtdEf(f) > 0).forEach(f => {
-        const o = g[sgNorm(f.sku)] = g[sgNorm(f.sku)] || { sku: f.sku, qtd: 0, fichas: 0, locs: [] };
-        o.qtd += amQtdEf(f); o.fichas++;
+      const qDep = document.getElementById('am-filtro').value.trim().toUpperCase();
+      amBusca(noDep).forEach(f => amItens(f).forEach(it => {
+        const qi = amQtdItem(f, it.sku);
+        if (!(qi > 0) || (qDep && amItens(f).some(x => sgNorm(x.sku).includes(qDep)) && !sgNorm(it.sku).includes(qDep))) return;
+        const o = g[sgNorm(it.sku)] = g[sgNorm(it.sku)] || { sku: it.sku, qtd: 0, fichas: 0, locs: [] };
+        o.qtd += qi; o.fichas++;
         if (f.localizacaoProduto && !o.locs.includes(f.localizacaoProduto)) o.locs.push(f.localizacaoProduto);
-      });
+      }));
       const ajAdm = insAjusteDe('ADM'), qAdm = document.getElementById('am-filtro').value.trim().toUpperCase();
       Object.keys(ajAdm).forEach(k => {
         if (!ajAdm[k] || (qAdm && !k.includes(qAdm))) return;
@@ -7659,11 +7679,11 @@
     }
 
     function amVerSku(sku) {
-      const lista = fichasAdm.filter(f => amNoDeposito(f) && amQtdEf(f) > 0 && sgNorm(f.sku) === sgNorm(sku)).sort((a, b) => a.dataEntrada.localeCompare(b.dataEntrada));
-      document.getElementById('am-s-sku').innerText = `${sku} — saldo ${lista.reduce((n, f) => n + amQtdEf(f), 0).toLocaleString('pt-BR')}`;
+      const lista = fichasAdm.filter(f => amNoDeposito(f) && amQtdItem(f, sku) > 0).sort((a, b) => a.dataEntrada.localeCompare(b.dataEntrada));
+      document.getElementById('am-s-sku').innerText = `${sku} — saldo ${lista.reduce((n, f) => n + amQtdItem(f, sku), 0).toLocaleString('pt-BR')}`;
       document.getElementById('am-s-tbody').innerHTML = lista.map(f => `<tr>
         <td class="py-2 px-2"><button onclick="amAbrirFicha('${f.id}')" class="font-mono font-semibold text-tbx-navy underline hover:text-blue-700">${escHtml(f.id)}</button></td>
-        <td class="py-2 px-2 text-xs text-slate-500 whitespace-nowrap">${sgDataBR(f.dataEntrada)}</td><td class="py-2 px-2 text-center font-bold">${escHtml(f.quantidade)}</td>
+        <td class="py-2 px-2 text-xs text-slate-500 whitespace-nowrap">${sgDataBR(f.dataEntrada)}</td><td class="py-2 px-2 text-center font-bold">${amQtdItem(f, sku).toLocaleString('pt-BR')}${amItens(f).length > 1 ? `<span class="block text-[10px] font-normal text-slate-400">doc. com ${amItens(f).length} SKUs</span>` : ''}</td>
         <td class="py-2 px-2">${escHtml(f.localizacaoProduto)}</td><td class="py-2 px-2">${escHtml(f.setorSolicitante)}</td><td class="py-2 px-2">${escHtml(f.solicitante)}</td></tr>`).join('')
         || '<tr><td colspan="6" class="py-6 text-center text-slate-400 text-sm">Sem saldo para este produto.</td></tr>';
       document.getElementById('modal-am-sku').classList.remove('hidden');
@@ -7685,7 +7705,7 @@
       document.getElementById('am-lista').innerHTML = itens.map(f => `
         <div onclick="amAbrirFicha('${f.id}')" class="p-4 cursor-pointer text-left transition-all ${f.id === amSel ? 'bg-blue-50/60 border-l-4 border-tbx-navy' : 'hover:bg-slate-50/50'}">
           <div class="flex justify-between items-center mb-1"><span class="font-mono text-[10px] font-bold text-tbx-navy">${escHtml(f.id)}</span><span class="text-[10px] text-slate-400 uppercase font-bold">Ficha ADM</span></div>
-          <h4 class="font-bold text-sm text-slate-800 line-clamp-1">${escHtml(f.sku)}</h4>
+          <h4 class="font-bold text-sm text-slate-800 line-clamp-1" title="${escHtml(amSkusTxt(f))}">${escHtml(amItens(f)[0].sku)}${amItens(f).length > 1 ? ` <span class="text-[10px] font-bold text-tbx-navy bg-blue-50 px-1.5 py-0.5 rounded">+${amItens(f).length - 1} SKU(s)</span>` : ''}</h4>
           <p class="text-xs text-slate-500 mt-1 line-clamp-1">Sol: ${escHtml(f.solicitante)}</p>
           <div class="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
             <span class="text-[10px] text-slate-400">${sgDataBR(f.dataEntrada)}</span>
@@ -7730,9 +7750,12 @@
         </div>
         <div class="text-center bg-slate-100 border border-black p-2 font-extrabold text-sm uppercase mb-6 tracking-wide" style="font-family: Arial, sans-serif;">FICHA DE ENTRADA E SAÍDA DE PRODUTO</div>
         <div class="space-y-6 text-sm">
-          <div>${sub('1. DADOS DO PRODUTO')}<div class="space-y-2 pl-2" style="font-family: monospace;">
-            <p>Código (SKU): <strong class="border-b border-black px-2" style="font-family: Georgia, serif;">${escHtml(f.sku)}</strong></p>
-            <p>Quantidade: <strong class="border-b border-black px-2" style="font-family: Georgia, serif;">${escHtml(f.quantidade)}</strong></p></div></div>
+          <div>${sub(amItens(f).length > 1 ? `1. DADOS DOS PRODUTOS (${amItens(f).length} SKUs)` : '1. DADOS DO PRODUTO')}${amItens(f).length > 1
+            ? `<table class="w-full text-sm border-collapse" style="font-family: Georgia, serif;"><thead><tr><th class="border border-black px-2 py-1 text-left w-10" style="font-family: Arial, sans-serif; font-size: 11px;">Nº</th><th class="border border-black px-2 py-1 text-left" style="font-family: Arial, sans-serif; font-size: 11px;">Código (SKU)</th><th class="border border-black px-2 py-1 text-left" style="font-family: Arial, sans-serif; font-size: 11px;">Quantidade</th></tr></thead>
+              <tbody>${amItens(f).map((it, n) => `<tr><td class="border border-black px-2 py-1">${n + 1}</td><td class="border border-black px-2 py-1 font-bold">${escHtml(it.sku)}</td><td class="border border-black px-2 py-1 font-bold">${escHtml(it.quantidade)}</td></tr>`).join('')}</tbody></table>`
+            : `<div class="space-y-2 pl-2" style="font-family: monospace;">
+            <p>Código (SKU): <strong class="border-b border-black px-2" style="font-family: Georgia, serif;">${escHtml(amItens(f)[0].sku)}</strong></p>
+            <p>Quantidade: <strong class="border-b border-black px-2" style="font-family: Georgia, serif;">${escHtml(amItens(f)[0].quantidade)}</strong></p></div>`}</div>
           <div class="pt-2">${sub('2. INFORMAÇÕES DA SOLICITAÇÃO')}<div class="space-y-3 pl-2">
             ${linha('Setor Solicitante', f.setorSolicitante, 200)}${linha('Solicitante (Nome completo)', f.solicitante, 300)}
             <p>Finalidade: <span class="border-b border-black px-2 inline-block italic" style="min-width:400px">${escHtml(f.finalidade)}</span></p></div></div>
@@ -7787,13 +7810,14 @@
 
     // ---- CRIAR FICHA ----
     function amPrepararCriar() {
-      ['am-c-sku', 'am-c-qtd', 'am-c-final', 'am-c-loc'].forEach(i => { document.getElementById(i).value = ''; });
+      ['am-c-final', 'am-c-loc'].forEach(i => { document.getElementById(i).value = ''; });
+      document.getElementById('am-c-itens').innerHTML = '';
+      amAddItem();
       document.getElementById('am-skus').innerHTML = getCatalogoProdutosAtual().map(p => `<option value="${escHtml(p.sku)}"></option>`).join('');
       document.getElementById('am-c-data').value = sgHoje();
       document.getElementById('am-c-perm').value = AM_DENTRO;
       ['am-c-solic', 'am-c-retirado', 'am-c-aprovado'].forEach(i => { document.getElementById(i).innerHTML = sgOpcoesColab(); });
       amAoMudarSolic();
-      document.getElementById('am-c-skumsg').classList.add('hidden');
       amAoMudarPerm();
       sgMostrarErro('am-c-erro', '');
     }
@@ -7813,30 +7837,68 @@
       if (!dentro) document.getElementById('am-c-loc').value = '';
     }
 
-    function amAoMudarSku() {
-      const inp = document.getElementById('am-c-sku'), msg = document.getElementById('am-c-skumsg');
+    // Linhas de SKU do documento (um documento pode ter vários SKUs)
+    function amAddItem() {
+      const box = document.getElementById('am-c-itens');
+      const row = document.createElement('div');
+      row.className = 'am-item';
+      row.innerHTML = `<div class="grid grid-cols-[1fr_1fr_2.25rem] gap-2 items-start">
+          <input list="am-skus" onchange="amAoMudarSku(this)" type="text" placeholder="Selecione o SKU" autocomplete="off" data-sem-corretor class="am-i-sku w-full border border-slate-300 rounded-lg p-2.5 text-sm font-mono uppercase">
+          <input type="text" placeholder="Ex: 250 Unidades" data-sem-corretor class="am-i-qtd w-full border border-slate-300 rounded-lg p-2.5 text-sm">
+          <button type="button" onclick="amRemItem(this)" title="Tirar este SKU" class="am-i-rem h-[42px] rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200"><i class="fa-solid fa-xmark"></i></button>
+        </div><p class="am-i-msg hidden text-xs mt-1"></p>`;
+      box.appendChild(row);
+      amAtualizarItens();
+      if (box.children.length > 1) row.querySelector('.am-i-sku').focus();
+    }
+    function amRemItem(btn) {
+      const box = document.getElementById('am-c-itens');
+      if (box.children.length <= 1) return;
+      btn.closest('.am-item').remove();
+      amAtualizarItens();
+    }
+    function amAtualizarItens() {
+      const rows = [...document.querySelectorAll('#am-c-itens .am-item')];
+      rows.forEach(r => r.querySelector('.am-i-rem').classList.toggle('invisible', rows.length <= 1));
+    }
+
+    function amAoMudarSku(inp) {
+      const msg = inp.closest('.am-item').querySelector('.am-i-msg');
       const sku = sgNorm(inp.value);
       msg.classList.toggle('hidden', !sku);
       if (!sku) return;
       const cad = getCatalogoProdutosAtual().find(p => sgNorm(p.sku) === sku);
-      msg.className = 'text-xs mt-1 ' + (cad ? 'text-emerald-700' : 'text-rose-600');
-      msg.innerText = cad ? 'SKU cadastrado.' : 'SKU não cadastrado. Cadastre o produto em Cadastro antes de criar a ficha.';
+      const repetido = cad && [...document.querySelectorAll('#am-c-itens .am-i-sku')].some(o => o !== inp && sgNorm(o.value) === sgNorm(cad.sku));
+      msg.className = 'am-i-msg text-xs mt-1 ' + (cad && !repetido ? 'text-emerald-700' : 'text-rose-600');
+      msg.innerText = !cad ? 'SKU não cadastrado. Cadastre o produto em Cadastro antes de criar a ficha.' : repetido ? 'Este SKU já está em outra linha deste documento.' : 'SKU cadastrado.';
       if (cad) inp.value = cad.sku;
     }
 
     function amSalvarFicha() {
       const v = i => document.getElementById(i).value.trim();
-      const sku = sgNorm(v('am-c-sku')), perm = v('am-c-perm'), qtd = amQtdNum(v('am-c-qtd'));
-      const cad = getCatalogoProdutosAtual().find(p => sgNorm(p.sku) === sku);
+      const perm = v('am-c-perm'), catalogo = getCatalogoProdutosAtual();
+      // Linhas de SKU: as totalmente vazias são ignoradas; precisa ter pelo menos uma.
+      const linhas = [...document.querySelectorAll('#am-c-itens .am-item')].map(r => ({ sku: sgNorm(r.querySelector('.am-i-sku').value), txt: r.querySelector('.am-i-qtd').value.trim() })).filter(l => l.sku || l.txt);
+      let msgItens = !linhas.length ? 'Informe o SKU.' : '';
+      const itens = [], vistos = new Set();
+      linhas.forEach((l, n) => {
+        if (msgItens) return;
+        const rot = linhas.length > 1 ? ` (linha ${n + 1})` : '';
+        const cad = catalogo.find(p => sgNorm(p.sku) === l.sku), qtd = amQtdNum(l.txt);
+        if (!l.sku) msgItens = 'Informe o SKU' + rot + '.';
+        else if (!cad) msgItens = `SKU ${l.sku} não cadastrado${rot}. Cadastre o produto em Cadastro antes de criar a ficha.`;
+        else if (vistos.has(sgNorm(cad.sku))) msgItens = `O SKU ${cad.sku} está repetido no documento. Use uma linha só para ele.`;
+        else if (!(qtd > 0)) msgItens = `Informe a quantidade${rot} (com um número maior que zero, ex.: 250 Unidades).`;
+        else { vistos.add(sgNorm(cad.sku)); itens.push({ sku: amMaiusc(cad.sku), quantidade: amTitulo(l.txt), qtd }); }
+      });
       const msg = !colaboradores.length ? 'Cadastre os colaboradores em Cadastro antes de criar uma ficha.'
-        : !sku ? 'Informe o SKU.' : !cad ? 'SKU não cadastrado. Cadastre o produto em Cadastro antes de criar a ficha.'
-        : !(qtd > 0) ? 'Informe a quantidade (com um número maior que zero, ex.: 250 Unidades).' : !v('am-c-solic') ? 'Selecione o solicitante.'
+        : msgItens ? msgItens : !v('am-c-solic') ? 'Selecione o solicitante.'
         : !v('am-c-setor') ? 'O solicitante está sem setor no Cadastro de Colaboradores. Atualize o setor dele em Cadastro.' : !v('am-c-final') ? 'Informe a finalidade da solicitação.'
         : !v('am-c-data') ? 'Informe a data de entrada.' : (perm === AM_DENTRO && !v('am-c-loc')) ? 'Informe onde o produto está localizado.'
         : !v('am-c-retirado') ? 'Selecione quem retirou.' : !v('am-c-aprovado') ? 'Selecione quem aprovou.' : '';
       if (sgMostrarErro('am-c-erro', msg)) return;
       const f = amMigrar({
-        id: amProximoId(), sku: amMaiusc(cad.sku), quantidade: amTitulo(v('am-c-qtd')), qtd, setorSolicitante: amTitulo(v('am-c-setor')),
+        id: amProximoId(), sku: itens[0].sku, quantidade: itens[0].quantidade, qtd: itens[0].qtd, itens, setorSolicitante: amTitulo(v('am-c-setor')),
         solicitante: amTitulo(v('am-c-solic')), finalidade: v('am-c-final'), dataEntrada: v('am-c-data'), permanece: perm,
         localizacaoProduto: perm === AM_DENTRO ? amTitulo(v('am-c-loc')) : '', retiradoPor: amTitulo(v('am-c-retirado')), aprovadoPor: amTitulo(v('am-c-aprovado')),
         status: 'pendente', criadoEm: new Date().toISOString()
