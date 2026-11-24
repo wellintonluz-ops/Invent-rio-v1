@@ -283,6 +283,10 @@
       body.menu-auto > aside { background-color: #0f2a4a; position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; overflow-y: auto; overflow-x: hidden; transition: width .16s ease, box-shadow .16s ease; }
       body.menu-auto:not(.menu-recolhido) > aside { box-shadow: 10px 0 28px rgba(15, 23, 42, .28); }
       body.menu-auto .sb-head > button[onclick="alternarMenuLateral()"] { display: none !important; }
+      #ind-overlay.ind-auto { padding-left: 64px; }
+      #ind-overlay.ind-auto #ind-sidebar { position: absolute; top: 0; left: 0; bottom: 0; z-index: 40; transition: width .16s ease, box-shadow .16s ease; }
+      #ind-overlay.ind-auto:not(.ind-rail) #ind-sidebar { box-shadow: 10px 0 28px rgba(15, 23, 42, .28); }
+      #ind-overlay.ind-auto button[onclick="tbxIndRecolher()"] { display: none !important; }
     }
   </style>
 </head>
@@ -308,6 +312,15 @@
         });
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ligar); else ligar();
+      // Mesmo comportamento para os outros menus laterais (Indicadores, Treinamento): recolhido em ícones, abre ao passar o mouse.
+      // ligarAuto(aside, recolher(bool)) — só em computador com mouse.
+      window.tbxMenuMouse = function () { return !!(mq && mq.matches); };
+      window.tbxMenuHover = function (aside, recolher) {
+        if (!aside || aside.__menuHover) return; aside.__menuHover = true;
+        var a = null, f = null;
+        aside.addEventListener('mouseenter', function () { if (!window.tbxMenuMouse()) return; clearTimeout(f); a = setTimeout(function () { recolher(false); }, 90); });
+        aside.addEventListener('mouseleave', function () { if (!window.tbxMenuMouse()) return; clearTimeout(a); f = setTimeout(function () { recolher(true); }, 220); });
+      };
       if (mq && mq.addEventListener) mq.addEventListener('change', function (e) {
         document.body.classList.toggle('menu-auto', e.matches);
         if (e.matches) document.body.classList.add('menu-recolhido');
@@ -2828,7 +2841,26 @@
         o = document.createElement('div'); o.id = 'treino-overlay'; o.className = 'hidden fixed inset-0 z-[100] bg-white flex flex-col';
         o.innerHTML = '<div id="treino-rnc-bar" style="display:none" class="items-center justify-between gap-3 bg-tbx-navy text-white px-4 py-2 text-sm"><span id="treino-rnc-txt" class="font-semibold"></span><button id="treino-rnc-btn" onclick="tbxRncCancelar()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 font-semibold text-xs shrink-0"><i class="fa-solid fa-arrow-left mr-1"></i>Cancelar e voltar ao inventário</button></div>';
         const f = document.createElement('iframe'); f.id = 'treino-frame'; f.className = 'flex-1 w-full border-0'; f.srcdoc = TBXArmazem.preparar(TREINO_DOC);
+        f.addEventListener('load', () => { try { tbxTreinoMenuAuto(f); } catch (e) {} });
         o.appendChild(f); document.body.appendChild(o); return o;
+      }
+      // Menu do Treinamento abre ao passar o mouse (igual ao principal): recolhido em ícones, por cima da tela.
+      function tbxTreinoMenuAuto(f) {
+        if (!window.tbxMenuMouse || !tbxMenuMouse()) return;
+        const d = f.contentDocument, aside = d && d.getElementById('app-sidebar'); if (!aside) return;
+        if (!d.getElementById('tbx-menu-auto-css')) {
+          const st = d.createElement('style'); st.id = 'tbx-menu-auto-css';
+          st.textContent = `body.menu-auto .tbx-menu-wrap { padding-left: 64px; }
+            body.menu-auto #app-sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 60; transition: width .16s ease, box-shadow .16s ease !important; }
+            body.menu-auto #app-sidebar:not(.sidebar-collapsed) { box-shadow: 10px 0 28px rgba(15, 23, 42, .28); }
+            body.menu-auto #app-sidebar button[onclick="toggleSidebar()"] { display: none !important; }
+            body.menu-auto.rnc-modo .tbx-menu-wrap { padding-left: 0; }`;
+          d.head.appendChild(st);
+        }
+        if (aside.parentElement) aside.parentElement.classList.add('tbx-menu-wrap');
+        d.body.classList.add('menu-auto');
+        aside.classList.add('sidebar-collapsed');
+        tbxMenuHover(aside, rec => aside.classList.toggle('sidebar-collapsed', rec));
       }
       // ----- Indicadores (mesmo visual: menu azul, logo, recolher em ícones; hoje só a tela Análise) -----
       function montarInd() {
@@ -2856,13 +2888,20 @@
             <header class="bg-white border-b border-blue-100 px-6 py-4 shadow-sm"><h1 id="ind-titulo" class="text-xl font-bold text-slate-800">Análise tabela geral</h1></header>
             <main id="ind-main" class="flex-1 overflow-y-auto p-4 md:p-6"><div id="ind-conteudo"></div></main>
           </div>`;
-        document.body.appendChild(o); return o;
+        document.body.appendChild(o);
+        if (window.tbxMenuMouse && tbxMenuMouse()) {
+          o.classList.add('ind-auto', 'ind-rail');
+          tbxMenuHover(o.querySelector('#ind-sidebar'), rec => { o.classList.toggle('ind-rail', rec); if (rec) { const m = $('ind-logo-menu'); if (m) m.classList.add('hidden'); } });
+        }
+        return o;
       }
       // ----- Análise > Resumo Mensal De Acuracidade -----
       // Depósitos mostrados: tbx_ind_depositos = { sigla: ordem } (ordem 0 = não mostrar; de 1 a 7 depósitos, na ordem em que foram marcados).
       // Números (PROVISÓRIO, até definirmos o critério): por linha de cada inventário finalizado no mês, Acerto = bateu com o sistema (ou divergência desconsiderada), Erro = divergente; "não contado" fica de fora.
       const IND_MAX = 7, IND_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-      let indAno = new Date().getFullYear(), indModo = 'tabela', indTela = 'analise';   // indTela = item do menu (analise | acao)
+      let indAno = new Date().getFullYear(), indModo = 'tabela', indTela = 'analise';
+      // Visualizar (só a tabela, o resumo e o ano) | Editar (meses, critério, origem dos dados e configuração). Fica guardado neste navegador.
+      let indEditar = false; try { indEditar = localStorage.getItem('indModoEditar') === '1'; } catch (e) {}   // indTela = item do menu (analise | acao)
       const indLerCfg = () => { try { const o = JSON.parse(localStorage.getItem('tbx_ind_depositos')); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } };
       function indSelecionados() {
         const cfg = indLerCfg();
@@ -2958,10 +2997,17 @@
         const chipsMes = `<div class="flex items-center gap-1.5 flex-wrap mb-3"><span class="text-xs font-semibold ac-aviso mr-1">Meses:</span>
             <button onclick="indMesesVisTodos()" class="px-2.5 py-1 rounded-full text-xs font-semibold border ${mesesVis.length === 12 ? 'bg-tbx-navy text-white border-tbx-navy' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}">Todos</button>
             ${IND_MESES.map((nm, m) => `<button onclick="indMesVis(${m})" class="px-2.5 py-1 rounded-full text-xs font-semibold border ${mesesVis.includes(m) && mesesVis.length < 12 ? 'bg-tbx-navy text-white border-tbx-navy' : mesesVis.includes(m) ? 'bg-blue-50 text-tbx-navy border-blue-200' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}">${nm}</button>`).join('')}</div>`;
-        box.innerHTML = `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        const anoSel = `<label class="flex items-center gap-2 text-sm font-semibold text-slate-700">Ano
+            <select onchange="indTrocarAno(this.value)" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-tbx-navy bg-white">${anos.map(a => `<option value="${a}" ${a === indAno ? 'selected' : ''}>${a}</option>`).join('')}</select></label>`;
+        const modoBtn = (ed, ic, t) => `<button onclick="indModoEd(${ed})" class="px-3 py-1.5 text-sm font-semibold ${indEditar === ed ? 'bg-tbx-navy text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"><i class="fa-solid ${ic} mr-1.5"></i>${t}</button>`;
+        const barra = `<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">${modoBtn(false, 'fa-eye', 'Visualizar')}${modoBtn(true, 'fa-pen', 'Editar')}</div>
+            ${anoSel}</div>`;
+        const edicao = indEditar ? `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
             <button onclick="indAbrirConfig()" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-50"><i class="fa-solid fa-gear mr-2"></i>Configurar depósitos</button>
-          </div>
+          </div>` : '';
+        box.innerHTML = `${barra}${edicao}
           <div class="ac-scroll"><div class="ac-quadro" style="min-width:${56 + deps.length * 216 + 28}px">
             <div class="ac-titulo">Resumo Mensal De Acuracidade</div>
             <table class="ac-tab"><colgroup><col style="width:56px">${deps.map(() => '<col style="width:50px"><col style="width:56px"><col style="width:50px"><col style="width:60px">').join('')}</colgroup><thead>
@@ -3121,6 +3167,7 @@
       window.indAbrirConfig = function () { indModo = 'config'; indRender(); };
       window.indFecharConfig = function () { if (!indSelecionados().length) return; indModo = 'tabela'; indRender(); };
       window.indTrocarAno = function (v) { indAno = parseInt(v, 10) || indAno; indRender(); };
+      window.indModoEd = function (ed) { indEditar = !!ed; try { localStorage.setItem('indModoEditar', ed ? '1' : '0'); } catch (e) {} indRender(); };
       window.indMarcarDep = function (sigla, on) {
         const cfg = indLerCfg(), deps = indSelecionados();
         if (on) {
@@ -9712,7 +9759,8 @@
           if (!t) { esconder(); return; }
           var menu = null;
           for (var i = 0; i < RECOLHIDOS.length && !menu; i++) { var c = doc.querySelector(RECOLHIDOS[i]); if (c && c.contains(t)) menu = c; }
-          if (menu && doc.body.classList.contains('menu-auto') && menu.parentElement === doc.body) menu = null;   // menu principal abre sozinho: o nome já aparece
+          if (menu && doc.body.classList.contains('menu-auto') && (menu.parentElement === doc.body || menu.id === 'app-sidebar')) menu = null;   // menus que abrem sozinhos: o nome já aparece
+          if (menu && menu.id === 'ind-sidebar' && menu.closest('.ind-auto')) menu = null;
           var txt = menu ? nome(t) : '';
           if (!txt) { esconder(); return; }
           if (t === alvo) return; alvo = t;
