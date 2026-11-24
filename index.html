@@ -3311,13 +3311,23 @@
         if (!r.ok) { const e = new Error((j.error && j.error.message) || ('HTTP ' + r.status)); e.status = r.status; e.motivo = j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason; throw e; }
         return j;
       }
+      // Acha a conversa certa: entre as conversas com esse assunto (sem rascunhos), a que tem MAIS mensagens
+      // (a conversa de sempre). Responde à última mensagem já enviada/recebida dela (nunca a um rascunho).
       async function indAcharConversa(tok) {
-        const q = encodeURIComponent('subject:"' + IND_EMAIL_ASSUNTO + '"');
-        const l = await indGmail(tok, 'GET', 'messages?maxResults=1&q=' + q);
-        if (!l.messages || !l.messages.length) return null;
-        const m = await indGmail(tok, 'GET', 'messages/' + l.messages[0].id + '?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=Subject');
+        const q = encodeURIComponent('subject:"' + IND_EMAIL_ASSUNTO + '" -in:drafts -in:chats');
+        const l = await indGmail(tok, 'GET', 'threads?maxResults=15&q=' + q);
+        if (!l.threads || !l.threads.length) return null;
+        let melhor = null;
+        for (const t of l.threads) {
+          const th = await indGmail(tok, 'GET', 'threads/' + t.id + '?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=Subject');
+          const msgs = (th.messages || []).filter(m => !(m.labelIds || []).includes('DRAFT'));
+          if (!msgs.length) continue;
+          if (!melhor || msgs.length > melhor.msgs.length) melhor = { id: th.id, msgs };
+        }
+        if (!melhor) return null;
+        const m = melhor.msgs[melhor.msgs.length - 1];
         const h = n => ((m.payload && m.payload.headers) || []).find(x => x.name.toLowerCase() === n.toLowerCase());
-        return { threadId: m.threadId, msgId: (h('Message-ID') || {}).value || '', refs: (h('References') || {}).value || '', assunto: (h('Subject') || {}).value || IND_EMAIL_ASSUNTO };
+        return { threadId: melhor.id, total: melhor.msgs.length, msgId: (h('Message-ID') || {}).value || '', refs: (h('References') || {}).value || '', assunto: (h('Subject') || {}).value || IND_EMAIL_ASSUNTO };
       }
       function indMontarEmail({ para, cc, assunto, frase, png, larg, conversa }) {
         const lim = 'tbx' + Date.now().toString(36), cid = 'tabela' + Date.now().toString(36) + '@tbx';
@@ -3355,7 +3365,7 @@
           let conversa;
           try { conversa = await indAcharConversa(tok); }
           catch (e) { if (e.status === 401) { tbxGoogleTokenLimpar(); throw Object.assign(new Error('a permissão do Google expirou; clique de novo em Enviar por e-mail'), { status: 401 }); } throw e; }
-          const assunto = conversa ? (/^re:/i.test(conversa.assunto) ? conversa.assunto : 'Re: ' + conversa.assunto) : IND_EMAIL_ASSUNTO;
+          const assunto = conversa ? conversa.assunto : IND_EMAIL_ASSUNTO;   // mesmo assunto da conversa (o Gmail junta pela conversa + cabeçalhos de resposta)
           const raw = indMontarEmail({ para: IND_EMAIL_PARA, cc, assunto, frase, png, larg, conversa });
           const env = await indGmail(tok, 'POST', 'messages/send', conversa ? { raw, threadId: conversa.threadId } : { raw });
           let quem = ''; try { const s = window.usrSessao && usrSessao(); quem = (s && (s.nome || s.login)) || ''; } catch (e) {}
