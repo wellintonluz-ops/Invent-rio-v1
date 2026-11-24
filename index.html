@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <meta name="tbx-versao" content="20261124-161515">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -2376,6 +2377,24 @@
         if (!inventarioEmAndamento() && (document.hidden || (parado && !telaOcupada(document)))) { recarregarAgora(true).then(ok => { if (!ok) recargaPedida = false; }); return; }
         recargaTimer = setTimeout(verificarRecarga, 3000);
       }
+      // Versão nova do site publicada: a tela atualiza sozinha (quando ninguém estiver mexendo e sem inventário em andamento),
+      // para nunca ficar uma aba rodando código antigo. Confere a cada 3 minutos e ao voltar para a aba.
+      (function () {
+        const minha = (document.querySelector('meta[name="tbx-versao"]') || {}).content || '';
+        if (!minha || location.protocol === 'file:') return;
+        let avisado = false;
+        async function conferir() {
+          if (avisado) return;
+          try {
+            const t = await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '');
+            const m = t.match(/<meta name="tbx-versao" content="([^"]+)"/);
+            if (m && m[1] !== minha) { avisado = true; recarregarQuandoPossivel('Há uma versão nova do site.'); }
+          } catch (e) {}
+        }
+        setInterval(conferir, 3 * 60000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) conferir(); });
+        setTimeout(conferir, 20000);
+      })();
       function recarregarQuandoPossivel(motivo) {
         const aviso = $('nuvem-aviso');
         if (aviso) {
