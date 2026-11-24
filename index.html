@@ -3038,7 +3038,8 @@
               <tr class="ac-sub"><th class="ac-data">Data</th>${cab2}</tr>
             </thead><tbody>${linhas}</tbody></table>
           </div></div>`;
-        indCarregarH2C().catch(() => {});
+        // guarda os números da tabela desenhada, para gerar a imagem do e-mail
+        indUltTabela = { ano: indAno, deps: deps.map(indRotulo), linhas: mesesTab.map(i => ({ mes: IND_MESES[i], cels: deps.map(d => { const c = dados[d.sigla][i], t = c.erro + c.acerto; return t ? [fmt(c.erro), fmt(c.acerto), fmt(t), pct(c.acerto, t)] : null; }) })) };
       }
       // Depósitos de Inserção (.INS) e Descarte (.DESC) ficam numa coluna separada, ao lado dos depósitos principais
       const indEhArea = d => /\.(ins|desc)$/i.test(String(d.sigla || '')) || /insercao|descarte/.test(dpNorm(d.nome));
@@ -3216,31 +3217,59 @@
         const cor = tipo === 'ok' ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : tipo === 'erro' ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-blue-50 border-blue-300 text-blue-900';
         b.innerHTML = `<div class="mb-3 border rounded-lg px-3 py-2 text-sm ${cor}">${html}</div>`;
       }
-      let indH2C = null;
-      function indCarregarH2C() {
-        if (window.html2canvas) return Promise.resolve(window.html2canvas);
-        return indH2C || (indH2C = new Promise((ok, falha) => {
-          const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-          sc.onload = () => ok(window.html2canvas); sc.onerror = () => { indH2C = null; falha(new Error('não carregou o gerador de imagem')); };
-          document.head.appendChild(sc);
-        }));
+      // Imagem da tabela para o e-mail: desenhada direto no canvas com os números da tela (cores e medidas da planilha),
+      // assim cada texto fica centralizado na célula, igual ao print.
+      let indUltTabela = null;
+      function indDesenharTabela(T) {
+        const S = 2, M = 14, P = 8;
+        const cw = [56]; T.deps.forEach(() => cw.push(50, 56, 50, 60));
+        const tabW = cw.reduce((a, b) => a + b, 0), hTit = 58, gap = 7, hDep = 76, hSub = 34, hRow = 42;
+        const tabH = hDep + hSub + hRow * T.linhas.length;
+        const W = 2 * M + 4 + 2 * P + tabW, H = 2 * M + 4 + 2 * P + hTit + gap + tabH;
+        const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+        const g = cv.getContext('2d'); g.scale(S, S);
+        const fonteT = 'Calibri, Carlito, Arial, sans-serif';
+        const ret = (x, y, w, h, cor) => { g.fillStyle = cor; g.fillRect(x, y, w, h); };
+        const hl = (x, y, w, t) => ret(x, y - t / 2, w, t, '#000'), vl = (x, y, h, t) => ret(x - t / 2, y, t, h, '#000');
+        const texto = (t, cx, cy, tam, cor, neg, fam, maxW) => {
+          let f = tam; const fz = () => `${neg ? 'bold ' : ''}${f}px ${fam || fonteT}`;
+          g.font = fz(); while (maxW && f > 9 && g.measureText(t).width > maxW) { f--; g.font = fz(); }
+          g.fillStyle = cor; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, cx, cy);
+        };
+        ret(0, 0, W, H, '#8496b0');                                   // fundo azul-acinzentado
+        ret(M, M, W - 2 * M, H - 2 * M, '#a6a6a6');                   // moldura cinza
+        g.lineWidth = 2; g.strokeStyle = '#000'; g.strokeRect(M + 1, M + 1, W - 2 * M - 2, H - 2 * M - 2);
+        const x0 = M + 2 + P, y0 = M + 2 + P;
+        ret(x0, y0, tabW, hTit, '#fff'); g.strokeRect(x0 + 1, y0 + 1, tabW - 2, hTit - 2);
+        texto('Resumo Mensal De Acuracidade', x0 + tabW / 2, y0 + hTit / 2 + 1, 46, '#1f3864', false, "Cambria, Georgia, 'Times New Roman', serif", tabW - 30);
+        const ty = y0 + hTit + gap;
+        ret(x0, ty, tabW, tabH, '#fff');
+        const xs = [x0]; cw.forEach(w => xs.push(xs[xs.length - 1] + w));
+        const ys = [ty, ty + hDep, ty + hDep + hSub]; T.linhas.forEach(() => ys.push(ys[ys.length - 1] + hRow));
+        // textos
+        texto(String(T.ano), xs[0] + cw[0] / 2, ys[0] + hDep / 2, 15, '#e00000', true);
+        T.deps.forEach((d, k) => { const a = xs[1 + 4 * k], b = xs[5 + 4 * k]; texto(d, (a + b) / 2, ys[0] + hDep / 2, 22, '#1f3864', true, null, b - a - 12); });
+        texto('Data', xs[0] + cw[0] / 2, ys[1] + hSub / 2, 15, '#e00000', true);
+        T.deps.forEach((d, k) => ['Erro', 'Acerto', 'Total', '%'].forEach((t, c) => { const n = 1 + 4 * k + c; texto(t, xs[n] + cw[n] / 2, ys[1] + hSub / 2, 14, '#000', true, null, cw[n] - 4); }));
+        T.linhas.forEach((l, r) => {
+          const cy = ys[2 + r] + hRow / 2;
+          texto(l.mes, xs[0] + cw[0] / 2, cy, 15, '#0a2a7a', true);
+          l.cels.forEach((v, k) => { if (v) v.forEach((t, c) => { const n = 1 + 4 * k + c; texto(t, xs[n] + cw[n] / 2, cy, 14, '#000', false, null, cw[n] - 4); }); });
+        });
+        // linhas da grade (1px; 2px entre depósitos e na borda)
+        ys.forEach((y, r) => hl(x0, y, tabW, r === 0 || r === ys.length - 1 ? 2 : 1));
+        xs.forEach((x, n) => {
+          const borda = n === 0 || n === xs.length - 1, grupo = n >= 1 && (n - 1) % 4 === 0;
+          const t = borda || grupo ? 2 : 1;
+          if (borda || grupo || n === 1) vl(x, ty, tabH, t); else vl(x, ys[1], tabH - hDep, t);   // na 1ª linha só as divisões dos depósitos
+        });
+        return { cv, larg: W };
       }
-      // Gera a imagem da tabela (igual ao print), com a moldura azul-acinzentada da planilha
       async function indImagemTabela() {
-        const h2c = await indCarregarH2C();
-        const q = document.querySelector('#ind-conteudo .ac-quadro'); if (!q) throw new Error('tabela não encontrada');
-        const rq = q.getBoundingClientRect(), W = Math.ceil(rq.width) + 2, H = Math.ceil(rq.height) + 2;   // inclui a borda preta da moldura
-        const cv = await h2c(q, { backgroundColor: '#8496b0', scale: 2, logging: false, useCORS: true,
-          width: W, height: H, windowWidth: Math.max(document.documentElement.clientWidth, W + 80),
-          onclone: doc => {
-            const c = doc.querySelector('#ind-conteudo .ac-quadro'); if (!c) return;
-            c.querySelectorAll('select').forEach(s => { const sp = doc.createElement('span'); sp.textContent = s.options[s.selectedIndex] ? s.options[s.selectedIndex].text : s.value; s.replaceWith(sp); });
-            c.querySelectorAll('.ac-dep button').forEach(bt => { const sp = doc.createElement('span'); sp.textContent = bt.textContent; bt.replaceWith(sp); });
-          } });
-        // moldura de 14px na cor de fundo da tela, como no print
-        const m = 14 * 2, out = document.createElement('canvas'); out.width = cv.width + 2 * m; out.height = cv.height + 2 * m;
-        const g = out.getContext('2d'); g.fillStyle = '#8496b0'; g.fillRect(0, 0, out.width, out.height); g.drawImage(cv, m, m);
-        return await new Promise((ok, falha) => out.toBlob(b => b ? ok(b) : falha(new Error('falha ao gerar a imagem')), 'image/png'));
+        if (!indUltTabela) throw new Error('tabela não encontrada');
+        const { cv, larg } = indDesenharTabela(indUltTabela);
+        indImagemTabela.larg = larg;
+        return await new Promise((ok, falha) => cv.toBlob(b => b ? ok(b) : falha(new Error('falha ao gerar a imagem')), 'image/png'));
       }
       window.indImagemTabela = indImagemTabela;
       window.indAbrirGmail = function () {
@@ -3322,8 +3351,7 @@
           if (indAno !== new Date().getFullYear()) indTrocarAno(new Date().getFullYear());
           indAvisoEmail('info', '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Enviando o relatório do dia ' + dataBr + '...');
           let tok = await tokP;
-          const q = document.querySelector('#ind-conteudo .ac-quadro'), larg = q ? Math.ceil(q.getBoundingClientRect().width) + 30 : 1600;
-          const png = new Uint8Array(await (await indImagemTabela()).arrayBuffer());
+          const png = new Uint8Array(await (await indImagemTabela()).arrayBuffer()), larg = indImagemTabela.larg || 1600;
           let conversa;
           try { conversa = await indAcharConversa(tok); }
           catch (e) { if (e.status === 401) { tbxGoogleTokenLimpar(); throw Object.assign(new Error('a permissão do Google expirou; clique de novo em Enviar por e-mail'), { status: 401 }); } throw e; }
