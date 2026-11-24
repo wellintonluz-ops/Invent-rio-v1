@@ -2925,7 +2925,9 @@
       const indYmdL = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
       const indRotulo = d => { const m = indLerManual(); return (m && m.rotulos && m.rotulos[d.sigla]) || d.nome; };
       function indLinhas(i) { try { return construirLinhasComparativas(i.tentativas, i.dadosSistema, i.desconsideradas).filter(l => l.status !== 'nao-contado'); } catch (e) { return []; } }
+      let indMapaPP = null;
       function indCalcular(ano, deps) {
+        indMapaPP = null;
         const r = {}; deps.forEach(d => { r[d.sigla] = Array.from({ length: 12 }, () => ({ erro: 0, acerto: 0 })); });
         const chaves = deps.map(d => ({ d, s: dpNorm(d.sigla), n: dpNorm(d.nome), crit: indCritDe(d) }));
         const dias = {};   // 'sigla|AAAA-MM-DD' -> { mes, erro }
@@ -2939,7 +2941,9 @@
           const alvo = chaves.find(k => (c && c === k.s) || nm === k.n); if (!alvo) return;
           const cel = r[alvo.d.sigla][dt.getMonth()];
           if (alvo.crit === 'posicao' && Array.isArray(i.posicoes)) {
+            const mapaPP = indMapaPP || (indMapaPP = ppIndicadorMapa());
             i.posicoes.forEach(p => {
+              const st = mapaPP.get(i.id + '|' + p.loc); if (st && !st.conta) return;   // repetida no mês ou além de 5592: fora do indicador
               const erro = p.st === 'div' || p.st === 'sku' || (p.st === 'vazia' && p.skuSis);
               let errou = !!erro;
               if (errou) {   // posição divergente cuja divergência foi desconsiderada conta como acerto
@@ -6337,10 +6341,43 @@
     // Produto Sistema / Qtd Sistema / Responsável / STS). Mostra SEMPRE a contagem principal (a 1ª, de quem contou
     // tudo); as recontagens não viram linha nem "contagem": aparecem como marcadores na lateral.
     // Porta-palete é avaliado por POSIÇÃO (1 SKU por posição): uma linha por posição contada. Posição vazia aparece como "Posição vazia" e X.
+    // PORTA-PALETE NO INDICADOR: por mês (do dia 1 ao último), cada posição entra uma vez só (a primeira contagem do mês)
+    // e no máximo PP_LIMITE_MES posições. O que passa disso continua no inventário, mas fica fora do indicador (amarelo claro na tela).
+    // Meses com números lançados à mão (planilha) já ocupam a cota com o total deles.
+    const PP_LIMITE_MES = 5592;
+    function ppIndicadorMapa() {
+      const mapa = new Map();
+      let man = null; try { man = JSON.parse(localStorage.getItem('tbx_ind_manual')); } catch (e) {}
+      const ymdL = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      const itens = [];
+      inventarios.forEach(i => {
+        if (!i || i.soValidacao || i.origem !== 'porta-palete' || !Array.isArray(i.posicoes) || !i.dataFinal) return;
+        const dt = new Date(i.dataFinal); if (isNaN(dt)) return;
+        if (man && Number(man.ano) === dt.getFullYear() && man.ate && ymdL(dt) <= String(man.ate)) return;   // período da planilha: o indicador nem olha o app
+        i.posicoes.forEach(p => itens.push({ k: i.id + '|' + p.loc, loc: String(p.loc || '').toUpperCase(), mes: dt.getFullYear() + '-' + dt.getMonth(), ano: dt.getFullYear(), m: dt.getMonth(), t: new Date(p.hora || i.dataFinal).getTime() || dt.getTime() }));
+      });
+      itens.sort((a, b) => a.t - b.t);
+      const meses = {};
+      itens.forEach(x => {
+        let g = meses[x.mes];
+        if (!g) {
+          const base = man && Number(man.ano) === x.ano && man.dados && Array.isArray(man.dados.PP) && Array.isArray(man.dados.PP[x.m]) ? (Number(man.dados.PP[x.m][0]) || 0) + (Number(man.dados.PP[x.m][1]) || 0) : 0;
+          g = meses[x.mes] = { usadas: base, vistas: new Set() };
+        }
+        if (g.vistas.has(x.loc)) mapa.set(x.k, { conta: false, motivo: 'repetida' });
+        else if (g.usadas >= PP_LIMITE_MES) mapa.set(x.k, { conta: false, motivo: 'limite' });
+        else { g.vistas.add(x.loc); g.usadas++; mapa.set(x.k, { conta: true }); }
+      });
+      return mapa;
+    }
+
     function htmlLinhasPortaPalete(inv) {
       const quem = (inv.tentativas || [])[0] ? inv.tentativas[0].colaborador : '-';
       const ok = '<span class="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">OK</span>';
+      const mapaInd = ppIndicadorMapa();
       return inv.posicoes.map(d => {
+        const ind = mapaInd.get(inv.id + '|' + d.loc), fora = ind && !ind.conta;
+        const tagFora = fora ? `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200 whitespace-nowrap" title="Foi inventariada, mas não entra no indicador: ${ind.motivo === 'repetida' ? 'esta posição já foi contada neste mês' : 'o mês já tem ' + PP_LIMITE_MES + ' posições contadas'}.">Fora do indicador · ${ind.motivo === 'repetida' ? 'posição repetida no mês' : 'limite de ' + PP_LIMITE_MES + ' no mês'}</span>` : '';
         const dt = new Date(d.hora || inv.dataFinal);
         const erro = d.st === 'div' || d.st === 'sku' || (d.st === 'vazia' && !!d.skuSis);
         let sts = ok;
@@ -6353,13 +6390,13 @@
             : `<button onclick="${clk}" title="Clique para desconsiderar esta divergência" class="px-2 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 hover:bg-rose-200 whitespace-nowrap">Divergente</button>`;
         }
         const rec = d.hist && d.hist.length ? `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold border ${d.st === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'} whitespace-nowrap"><i class="fa-solid fa-rotate-right mr-1"></i>${ppTextoHist(d)}</span>` : '<span class="text-slate-300">-</span>';
-        return `<tr class="hover:bg-blue-50/50">
+        return `<tr class="${fora ? 'bg-yellow-50 hover:bg-yellow-100/70' : 'hover:bg-blue-50/50'}">
           <td class="py-2 px-3 text-center text-xs text-slate-500">${dt.toLocaleDateString('pt-BR')}</td>
           <td class="py-2 px-3 text-center text-xs text-slate-500">${dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
           <td class="py-2 px-3 text-center font-mono font-semibold text-slate-800">${escHtml(d.loc)}</td>
           <td class="py-2 px-3 text-center font-mono font-semibold text-slate-800">${d.st === 'vazia' ? 'Posição vazia' : escHtml(d.skuFis)}</td><td class="py-2 px-3 text-center font-bold">${d.st === 'vazia' ? 'X' : d.qtdFis}</td>
           <td class="py-2 px-3 text-center font-mono font-semibold text-slate-800">${d.skuSis ? escHtml(d.skuSis) : 'Posição vazia'}</td><td class="py-2 px-3 text-center font-bold">${d.skuSis ? d.qtdSis : 'X'}</td>
-          <td class="py-2 px-3 text-center">${escHtml(quem)}</td><td class="py-2 px-3 text-center">${sts}</td><td class="py-2 px-3"><div class="flex items-center justify-between gap-2"><div>${rec}</div>${invBtnApagarLinha(inv, `invApagarPosicao('${escHtml(inv.id)}', '${escHtml(d.loc)}')`)}</div></td></tr>`;
+          <td class="py-2 px-3 text-center">${escHtml(quem)}</td><td class="py-2 px-3 text-center">${sts}</td><td class="py-2 px-3"><div class="flex items-center justify-between gap-2"><div class="flex flex-wrap gap-1">${rec}${tagFora}</div>${invBtnApagarLinha(inv, `invApagarPosicao('${escHtml(inv.id)}', '${escHtml(d.loc)}')`)}</div></td></tr>`;
       }).join('');
     }
 
