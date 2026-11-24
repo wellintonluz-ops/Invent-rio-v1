@@ -2412,20 +2412,6 @@
         try { fb = await Promise.race([carregarFirebase(), new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 20000))]); }
         catch (e) { return tela('Não consegui conectar ao Firebase (verifique a internet).', { erro: true, offline: true }); }
         const app = fb.initializeApp(CFG), auth = fb.getAuth(app), db = fb.getFirestore(app);
-        // Token do Google com permissões extras (ex.: Gmail) para a conta logada. Guarda 50 min nesta aba.
-        // Precisa ser chamado direto no clique (abre a janela do Google na 1ª vez de cada sessão).
-        window.tbxGoogleToken = async function (escopos, forcar) {
-          const k = 'gtok:' + escopos.join(' ');
-          if (!forcar) { try { const c = JSON.parse(sessionStorage.getItem(k)); if (c && c.exp > Date.now() + 60000) return c.tok; } catch (e) {} }
-          const u = auth.currentUser; if (!u) throw new Error('entre com a conta Google da empresa primeiro');
-          const p = new fb.GoogleAuthProvider(); escopos.forEach(x => p.addScope(x)); p.setCustomParameters({ hd: DOMINIO.slice(1), login_hint: u.email || '' });
-          const r = await fb.reauthenticateWithPopup(u, p);
-          const cred = fb.GoogleAuthProvider.credentialFromResult(r), tok = cred && cred.accessToken;
-          if (!tok) throw new Error('o Google não devolveu a permissão');
-          try { sessionStorage.setItem(k, JSON.stringify({ tok, exp: Date.now() + 50 * 60000 })); } catch (e) {}
-          return tok;
-        };
-        window.tbxGoogleTokenLimpar = () => { try { Object.keys(sessionStorage).filter(x => x.startsWith('gtok:')).forEach(x => sessionStorage.removeItem(x)); } catch (e) {} };
         let iniciado = false;
         $('nuvem-btn-login').onclick = async () => {
           const p = new fb.GoogleAuthProvider(); p.setCustomParameters({ hd: DOMINIO.slice(1), prompt: 'select_account' });
@@ -3016,15 +3002,7 @@
             <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">${modoBtn(false, 'fa-eye', 'Visualizar')}${modoBtn(true, 'fa-pen', 'Editar')}</div>
             <div class="flex items-center gap-3 flex-wrap">
               <span class="text-xs font-semibold ac-aviso">Dados até ${indDataRelatorio().split('-').reverse().join('/')}</span>
-              <div class="inline-flex items-center gap-1.5">
-                <span id="ind-cc-box" class="${indCcAberto ? 'inline-flex' : 'hidden'} items-center gap-1 bg-white border border-slate-300 rounded-lg pl-2 pr-1 py-0.5">
-                  <span class="text-xs font-semibold text-slate-500">Cópia:</span>
-                  <input id="ind-email-cc" value="${escHtml(indCcValor)}" oninput="indCcValor = this.value" placeholder="email@grupotbx.com.br" title="Separe vários e-mails por vírgula" class="w-56 text-sm px-1 py-1 outline-none">
-                  <button onclick="indCcFechar()" title="Tirar a cópia" class="w-6 h-6 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"><i class="fa-solid fa-xmark"></i></button>
-                </span>
-                <button id="ind-btn-cc" onclick="indCcAbrir()" title="Adicionar alguém em cópia neste envio" class="${indCcAberto ? 'hidden' : ''} w-8 h-8 rounded-lg border border-slate-300 bg-white text-tbx-navy font-bold hover:bg-slate-50"><i class="fa-solid fa-plus"></i></button>
-                <button id="ind-btn-email" onclick="indEnviarEmail()" title="Para: ${IND_EMAIL_PARA}" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-envelope mr-1.5"></i>Enviar por e-mail</button>
-              </div>
+              <button id="ind-btn-email" onclick="indEnviarEmail()" title="Copia a frase do dia + a tabela e abre a conversa do relatório no Gmail" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-envelope mr-1.5"></i>Enviar por e-mail</button>
               ${anoSel}</div></div><div id="ind-email-aviso"></div>`;
         const edicao = indEditar ? `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
@@ -3196,11 +3174,9 @@
       // O relatório sai sempre com a data do último dia já fechado: o dia útil anterior a hoje (segunda -> sexta),
       // e se nesse dia não houve inventário (feriado), volta até o último dia útil com inventário (no máximo 10 dias).
       const IND_EMAIL_ASSUNTO = 'Relatório de Acuracidade Diário';
-      const IND_EMAIL_PARA = 'wellinton.luz@grupotbx.com.br';   // destinatário padrão
-      // "+" abre o campo Cópia só para o envio de agora (não fica guardado)
-      let indCcAberto = false, indCcValor = '';
-      window.indCcAbrir = function () { indCcAberto = true; const b = $('ind-cc-box'), p = $('ind-btn-cc'); if (b) { b.classList.remove('hidden'); b.classList.add('inline-flex'); } if (p) p.classList.add('hidden'); const i = $('ind-email-cc'); if (i) i.focus(); };
-      window.indCcFechar = function () { indCcAberto = false; indCcValor = ''; indRender(); };
+      // Conversa de sempre do relatório no Gmail (marcador "Relatório Dário_ Wellinton"): o relatório é respondido NELA, nunca em e-mail novo.
+      // (O Gmail não deixa envio automático entrar nessa conversa, por isso a resposta é feita no próprio Gmail: Responder + Ctrl+V + Enviar.)
+      const IND_EMAIL_CONVERSA = 'https://mail.google.com/mail/u/0/#label/Relat%C3%B3rio+D%C3%A1rio_+Wellinton/KtbxLxGrWjVKqcGFcccCGbFfkRZqQvfqtg';
       function indDataRelatorio(agora) {
         const hoje = agora ? new Date(agora) : new Date();
         const comInv = new Set(); (inventarios || []).forEach(i => { if (i && i.dataFinal && !i.soValidacao) { const d = new Date(i.dataFinal); if (!isNaN(d)) comInv.add(indYmdL(d)); } });
@@ -3272,118 +3248,28 @@
         return await new Promise((ok, falha) => cv.toBlob(b => b ? ok(b) : falha(new Error('falha ao gerar a imagem')), 'image/png'));
       }
       window.indImagemTabela = indImagemTabela;
-      window.indAbrirGmail = function () {
-        if (indAno !== new Date().getFullYear()) { indTrocarAno(new Date().getFullYear()); }
+      // Enviar por e-mail: copia "frase do dia + tabela" (um Ctrl+V cola as duas) e abre a conversa do relatório no Gmail.
+      window.indEnviarEmail = function () {
+        if (indAno !== new Date().getFullYear()) indTrocarAno(new Date().getFullYear());
         const ref = indDataRelatorio(), dataBr = ref.split('-').reverse().join('/');
         const frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
-        const cc = (($('ind-email-cc') || {}).value || indCcValor || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /@/.test(x)).join(',');
-        const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(IND_EMAIL_PARA) + (cc ? '&cc=' + encodeURIComponent(cc) : '')
-          + '&su=' + encodeURIComponent(IND_EMAIL_ASSUNTO) + '&body=' + encodeURIComponent(frase + '\n\n');
-        const blobP = indImagemTabela();
-        let copiou = null;
+        let png = '', larg = 1600;
+        try { if (!indUltTabela) throw new Error('tabela não encontrada'); const d = indDesenharTabela(indUltTabela); png = d.cv.toDataURL('image/png'); larg = d.larg; }
+        catch (e) { indAvisoEmail('erro', 'Não consegui montar a imagem da tabela (' + escHtml(e.message || String(e)) + ').'); return; }
+        const html = `<div>${escHtml(frase)}</div><br><img src="${png}" width="${larg}" alt="Resumo Mensal De Acuracidade">`;
+        let copiou = Promise.resolve(false);
         try {
-          if (navigator.clipboard && window.ClipboardItem) copiou = navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]).then(() => true, () => false);
-        } catch (e) { copiou = null; }
-        const jan = window.open(url, '_blank');   // abre o Gmail já com destinatário, assunto e a frase do dia
-        indAvisoEmail('info', '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Gerando a imagem da tabela...');
-        Promise.resolve(copiou).then(async ok => {
-          if (ok) {
-            indAvisoEmail('ok', `<b><i class="fa-solid fa-check mr-1"></i>Tabela copiada!</b> No Gmail, clique na linha em branco abaixo da frase <i>"${escHtml(frase)}"</i>, aperte <b>Ctrl+V</b> para colar a tabela e depois <b>Enviar</b>.${jan ? '' : ' <br>O navegador bloqueou a janela do Gmail: <a class="underline font-semibold" href="' + url + '" target="_blank">clique aqui para abrir</a>.'}`);
-            return;
+          if (navigator.clipboard && window.ClipboardItem) copiou = navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([frase], { type: 'text/plain' }) })]).then(() => true, () => false);
+        } catch (e) {}
+        const jan = window.open(IND_EMAIL_CONVERSA, 'tbx_gmail_relatorio');   // abre (ou reaproveita) a aba do Gmail na conversa
+        const abrir = jan ? '' : ` O navegador bloqueou a janela: <a class="underline font-semibold" href="${IND_EMAIL_CONVERSA}" target="tbx_gmail_relatorio">abrir a conversa</a>.`;
+        copiou.then(ok => {
+          if (ok) indAvisoEmail('ok', `<b><i class="fa-solid fa-check mr-1"></i>Copiado: a frase do dia ${dataBr} + a tabela.</b> Na conversa que abriu no Gmail, clique em <b>Responder</b>, aperte <b>Ctrl+V</b> e depois <b>Enviar</b>. (Para mandar cópia para alguém, clique em <b>Cc</b> na resposta.)${abrir}`);
+          else {
+            const a = document.createElement('a'); a.href = png; a.download = `Acuracidade ${dataBr.replace(/\//g, '-')}.png`; document.body.appendChild(a); a.click(); a.remove();
+            indAvisoEmail('info', `Não consegui copiar automaticamente: a tabela foi <b>baixada</b> (${escHtml(a.download)}). Na conversa do Gmail clique em <b>Responder</b>, escreva <i>"${escHtml(frase)}"</i> e arraste a imagem para a mensagem.${abrir}`);
           }
-          // sem permissão de copiar: baixa a imagem para anexar
-          try {
-            const b = await blobP, a = document.createElement('a');
-            a.href = URL.createObjectURL(b); a.download = `Acuracidade ${dataBr.replace(/\//g, '-')}.png`; document.body.appendChild(a); a.click(); a.remove();
-            indAvisoEmail('info', `Não consegui copiar a imagem automaticamente, então ela foi <b>baixada</b> (${escHtml(a.download)}). No Gmail, arraste a imagem para dentro da mensagem e clique em <b>Enviar</b>.${jan ? '' : ' <a class="underline font-semibold" href="' + url + '" target="_blank">Abrir o Gmail</a>.'}`);
-          } catch (e) { indAvisoEmail('erro', 'Não consegui gerar a imagem da tabela (' + escHtml(e.message || String(e)) + '). Tire o print manualmente desta vez.'); }
         });
-      };
-      // ----- Envio direto (1 clique) pela API do Gmail, como RESPOSTA na conversa "Relatório de Acuracidade Diário" -----
-      // Envia pela conta Google logada na plataforma. Acha a conversa pelo assunto; se não existir, começa uma nova.
-      const IND_GMAIL_ESCOPOS = ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.readonly'];
-      const indB64 = bytes => { let b = ''; const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); };
-      const indB64Txt = t => indB64(new TextEncoder().encode(t));
-      const indQuebra = t => t.replace(/.{1,76}/g, '$&\r\n');
-      async function indGmail(tok, metodo, caminho, corpo) {
-        const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + caminho, { method: metodo, headers: Object.assign({ Authorization: 'Bearer ' + tok }, corpo ? { 'Content-Type': 'application/json' } : {}), body: corpo ? JSON.stringify(corpo) : undefined });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) { const e = new Error((j.error && j.error.message) || ('HTTP ' + r.status)); e.status = r.status; e.motivo = j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason; throw e; }
-        return j;
-      }
-      // Acha a conversa certa: entre as conversas com esse assunto (sem rascunhos), a que tem MAIS mensagens
-      // (a conversa de sempre). Responde à última mensagem já enviada/recebida dela (nunca a um rascunho).
-      async function indAcharConversa(tok) {
-        const q = encodeURIComponent('subject:"' + IND_EMAIL_ASSUNTO + '" -in:drafts -in:chats');
-        const l = await indGmail(tok, 'GET', 'threads?maxResults=15&q=' + q);
-        if (!l.threads || !l.threads.length) return null;
-        let melhor = null;
-        for (const t of l.threads) {
-          const th = await indGmail(tok, 'GET', 'threads/' + t.id + '?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=Subject');
-          const msgs = (th.messages || []).filter(m => !(m.labelIds || []).includes('DRAFT'));
-          if (!msgs.length) continue;
-          if (!melhor || msgs.length > melhor.msgs.length) melhor = { id: th.id, msgs };
-        }
-        if (!melhor) return null;
-        const m = melhor.msgs[melhor.msgs.length - 1];
-        const h = n => ((m.payload && m.payload.headers) || []).find(x => x.name.toLowerCase() === n.toLowerCase());
-        return { threadId: melhor.id, total: melhor.msgs.length, msgId: (h('Message-ID') || {}).value || '', refs: (h('References') || {}).value || '', assunto: (h('Subject') || {}).value || IND_EMAIL_ASSUNTO };
-      }
-      function indMontarEmail({ para, cc, assunto, frase, png, larg, conversa }) {
-        const lim = 'tbx' + Date.now().toString(36), cid = 'tabela' + Date.now().toString(36) + '@tbx';
-        const html = `<div style="font-family:Arial,sans-serif;font-size:14px">${escHtml(frase)}</div><br><img src="cid:${cid}" alt="Resumo Mensal De Acuracidade" width="${larg}" style="max-width:100%;width:${larg}px">`;
-        const cab = ['MIME-Version: 1.0', 'To: ' + para];
-        if (cc) cab.push('Cc: ' + cc);
-        cab.push('Subject: =?UTF-8?B?' + indB64Txt(assunto) + '?=');
-        if (conversa && conversa.msgId) { cab.push('In-Reply-To: ' + conversa.msgId); cab.push('References: ' + ((conversa.refs ? conversa.refs + ' ' : '') + conversa.msgId).trim()); }
-        cab.push('Content-Type: multipart/related; boundary="' + lim + '"');
-        const partes = [cab.join('\r\n'), '',
-          '--' + lim, 'Content-Type: text/html; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', indQuebra(indB64Txt(html)),
-          '--' + lim, 'Content-Type: image/png; name="Acuracidade.png"', 'Content-Transfer-Encoding: base64', 'Content-ID: <' + cid + '>', 'Content-Disposition: inline; filename="Acuracidade.png"', '', indQuebra(indB64(png)),
-          '--' + lim + '--', ''];
-        return indB64Txt(partes.join('\r\n')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      }
-      let indEnviando = false;
-      window.indEnviarEmail = async function () {
-        if (indEnviando) return;
-        if (!window.tbxGoogleToken) { indAvisoEmail('erro', 'Entre na plataforma com a conta Google da empresa para enviar o e-mail. <button class="underline font-semibold" onclick="indAbrirGmail()">Abrir no Gmail (colar a tabela)</button>'); return; }
-        const ref = indDataRelatorio(), dataBr = ref.split('-').reverse().join('/');
-        const frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
-        const cc = (($('ind-email-cc') || {}).value || indCcValor || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /@/.test(x)).join(', ');
-        let envios = {}; try { envios = JSON.parse(localStorage.getItem('tbx_ind_email_envios')) || {}; } catch (e) {}
-        if (envios[ref] && !confirm(`O relatório do dia ${dataBr} já foi enviado (${new Date(envios[ref].em).toLocaleString('pt-BR')}${envios[ref].por ? ' por ' + envios[ref].por : ''}).\n\nEnviar de novo?`)) return;
-        indEnviando = true;
-        const btn = $('ind-btn-email'); if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
-        const fim = () => { indEnviando = false; const b = $('ind-btn-email'); if (b) { b.disabled = false; b.classList.remove('opacity-60'); } };
-        const reserva = ' <button class="underline font-semibold" onclick="indAbrirGmail()">Abrir no Gmail e colar a tabela</button>';
-        try {
-          const tokP = tbxGoogleToken(IND_GMAIL_ESCOPOS);   // no clique: a janela do Google só aparece na 1ª vez da sessão
-          if (indAno !== new Date().getFullYear()) indTrocarAno(new Date().getFullYear());
-          indAvisoEmail('info', '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Enviando o relatório do dia ' + dataBr + '...');
-          let tok = await tokP;
-          const png = new Uint8Array(await (await indImagemTabela()).arrayBuffer()), larg = indImagemTabela.larg || 1600;
-          let conversa;
-          try { conversa = await indAcharConversa(tok); }
-          catch (e) { if (e.status === 401) { tbxGoogleTokenLimpar(); throw Object.assign(new Error('a permissão do Google expirou; clique de novo em Enviar por e-mail'), { status: 401 }); } throw e; }
-          const assunto = conversa ? conversa.assunto : IND_EMAIL_ASSUNTO;   // mesmo assunto da conversa (o Gmail junta pela conversa + cabeçalhos de resposta)
-          const raw = indMontarEmail({ para: IND_EMAIL_PARA, cc, assunto, frase, png, larg, conversa });
-          const env = await indGmail(tok, 'POST', 'messages/send', conversa ? { raw, threadId: conversa.threadId } : { raw });
-          let quem = ''; try { const s = window.usrSessao && usrSessao(); quem = (s && (s.nome || s.login)) || ''; } catch (e) {}
-          envios[ref] = { em: new Date().toISOString(), por: quem, id: env.id };
-          const ks = Object.keys(envios).sort(); while (ks.length > 60) delete envios[ks.shift()];
-          localStorage.setItem('tbx_ind_email_envios', JSON.stringify(envios));
-          indCcValor = ''; indCcAberto = false; indRender();
-          indAvisoEmail('ok', `<b><i class="fa-solid fa-check mr-1"></i>Relatório do dia ${dataBr} enviado</b> para ${escHtml(IND_EMAIL_PARA)}${cc ? ' (cópia: ' + escHtml(cc) + ')' : ''} ${conversa ? 'na conversa <i>"' + escHtml(IND_EMAIL_ASSUNTO) + '"</i>' : 'como e-mail novo (não achei a conversa antiga)'}.`);
-        } catch (e) {
-          const c = e && (e.code || e.motivo || ''), m = (e && e.message) || String(e);
-          let txt;
-          if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') txt = 'Envio cancelado: a janela do Google foi fechada antes de permitir.';
-          else if (c === 'auth/popup-blocked') txt = 'O navegador bloqueou a janela do Google. Libere pop-ups para esta página e clique de novo.';
-          else if (/has not been used|is disabled|accessNotConfigured|SERVICE_DISABLED/i.test(m + ' ' + c)) txt = 'O Gmail ainda não está ligado no projeto do Google da plataforma (Gmail API).';
-          else if (e.status === 403 || /insufficient/i.test(m)) { tbxGoogleTokenLimpar(); txt = 'O Google não deu permissão de enviar e-mail por esta conta. Clique de novo e marque as permissões na janela do Google.'; }
-          else txt = 'Não consegui enviar: ' + escHtml(m) + '.';
-          indAvisoEmail('erro', txt + reserva);
-        } finally { fim(); }
       };
       // Clicar no nome do depósito na tabela: abre a Visualização de Inventário já dentro desse depósito
       window.indAbrirDeposito = function (nome) {
