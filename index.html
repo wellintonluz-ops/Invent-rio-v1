@@ -2974,24 +2974,14 @@
         const pct = (a, t) => (a / t * 100).toFixed(1).replace('.', ',') + '%';
         const cab1 = deps.map(d => `<th colspan="4" class="ac-dep ac-gs">${escHtml(indRotulo(d))}</th>`).join('');
         const cab2 = deps.map(() => '<th class="ac-gs">Erro</th><th>Acerto</th><th>Total</th><th>%</th>').join('');
-        const linhas = indMesesSel().map(i => '<tr><td class="ac-mes">' + IND_MESES[i] + '</td>' + deps.map(d => {
+        // A tabela vai só até o último mês que tem dado no ano escolhido (sem meses vazios no fim)
+        let ultMes = -1; deps.forEach(d => dados[d.sigla].forEach((c, m) => { if (c.erro + c.acerto > 0 && m > ultMes) ultMes = m; }));
+        const mesesTab = indMesesSel().filter(m => ultMes < 0 || m <= ultMes);
+        const linhas = mesesTab.map(i => '<tr><td class="ac-mes">' + IND_MESES[i] + '</td>' + deps.map(d => {
           const c = dados[d.sigla][i], t = c.erro + c.acerto;
           return t ? `<td class="ac-gs">${fmt(c.erro)}</td><td>${fmt(c.acerto)}</td><td>${fmt(t)}</td><td>${pct(c.acerto, t)}</td>` : '<td class="ac-gs"></td><td></td><td></td><td></td>';
         }).join('') + '</tr>').join('');
-        // RESUMO (igual à planilha): Erro = soma, Acerto = soma, Média = média das % dos meses (meses sem dado não entram)
         const mesesVis = indMesesSel();
-        const resumo = deps.map(d => {
-          let e = 0, a = 0; const ps = [];
-          mesesVis.forEach(m => { const c = dados[d.sigla][m], t = c.erro + c.acerto; e += c.erro; a += c.acerto; if (t) ps.push(c.acerto / t); });
-          return { e, a, media: ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : null };
-        });
-        const pctN = v => v === null ? '' : (v * 100).toFixed(1).replace('.', ',') + '%';
-        const tabResumo = `<table class="ac-tab ac-resumo" style="margin-top:8px"><colgroup><col style="width:56px">${deps.map(() => '<col style="width:50px"><col style="width:56px"><col style="width:50px"><col style="width:60px">').join('')}</colgroup><tbody>
-            <tr><td class="ac-mes"></td>${deps.map(() => '<td colspan="4" class="ac-gs ac-res-tit">RESUMO</td>').join('')}</tr>
-            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Erro</td><td colspan="2">${x.e}</td>`).join('')}</tr>
-            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Acerto</td><td colspan="2">${x.a}</td>`).join('')}</tr>
-            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Média</td><td colspan="2">${pctN(x.media)}</td>`).join('')}</tr>
-          </tbody></table>`;
         const manI = indLerManual();
         const notaMan = manI && Number(manI.ano) === indAno && manI.ate ? `<p class="text-xs ac-aviso mt-1"><b>Origem dos dados:</b> até ${manI.ate.split('-').reverse().join('/')} lançados à mão da planilha${manI.fonte ? ' (' + escHtml(manI.fonte) + ')' : ''}; depois dessa data, inventários do app.</p>` : '';
         const chipsMes = `<div class="flex items-center gap-1.5 flex-wrap mb-3"><span class="text-xs font-semibold ac-aviso mr-1">Meses:</span>
@@ -3013,7 +3003,7 @@
             <table class="ac-tab"><colgroup><col style="width:56px">${deps.map(() => '<col style="width:50px"><col style="width:56px"><col style="width:50px"><col style="width:60px">').join('')}</colgroup><thead>
               <tr><th class="ac-ano"><select onchange="indTrocarAno(this.value)">${anos.map(a => `<option value="${a}" ${a === indAno ? 'selected' : ''}>${a}</option>`).join('')}</select></th>${cab1}</tr>
               <tr class="ac-sub"><th class="ac-data">Data</th>${cab2}</tr>
-            </thead><tbody>${linhas}</tbody></table>${tabResumo}
+            </thead><tbody>${linhas}</tbody></table>
           </div></div>`;
       }
       // Depósitos de Inserção (.INS) e Descarte (.DESC) ficam numa coluna separada, ao lado dos depósitos principais
