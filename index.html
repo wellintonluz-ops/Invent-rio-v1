@@ -245,6 +245,9 @@
     .ac-tab tbody td { height: 42px; font-size: 14px; color: #000; }
     .ac-tab tbody td.ac-mes { font-weight: 800; color: #0a2a7a; font-size: 15px; }
     .ac-tab .ac-gs { border-left: 2px solid #000; }
+    .ac-tab.ac-resumo td { height: 30px; }
+    .ac-tab .ac-res-tit { font-weight: 800; color: #1f3864; font-size: 15px; }
+    .ac-tab .ac-res-rot { font-weight: 700; text-align: left; padding-left: 10px; }
     /* a tela fica dentro de <main>: anula o estilo geral das tabelas do app */
     .ac-tab thead th { position: static; background: #fff; letter-spacing: 0; }
     .ac-tab tbody tr, .ac-tab tbody tr:nth-child(even), .ac-tab tbody tr:hover { background: #fff !important; }
@@ -2876,14 +2879,22 @@
       const IND_CRIT = { dia: 'Diário', sku: 'Por SKU', posicao: 'Por posição' };
       const indLerCrit = () => { try { const o = JSON.parse(localStorage.getItem('tbx_ind_criterios')); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } };
       const indCritDe = d => d.portaPalete ? 'posicao' : (indLerCrit()[d.sigla] === 'dia' ? 'dia' : 'sku');
+      // tbx_ind_manual = { ano, ate: 'AAAA-MM-DD', fonte, dados: { sigla: [[erro, acerto] x 12] }, rotulos: { sigla: 'nome na planilha' } }
+      // Até "ate" (inclusive) os números do ano vêm daqui; o app só conta inventários finalizados depois dessa data.
+      const indLerManual = () => { try { const o = JSON.parse(localStorage.getItem('tbx_ind_manual')); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; } };
+      const indYmdL = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      const indRotulo = d => { const m = indLerManual(); return (m && m.rotulos && m.rotulos[d.sigla]) || d.nome; };
       function indLinhas(i) { try { return construirLinhasComparativas(i.tentativas, i.dadosSistema, i.desconsideradas).filter(l => l.status !== 'nao-contado'); } catch (e) { return []; } }
       function indCalcular(ano, deps) {
         const r = {}; deps.forEach(d => { r[d.sigla] = Array.from({ length: 12 }, () => ({ erro: 0, acerto: 0 })); });
         const chaves = deps.map(d => ({ d, s: dpNorm(d.sigla), n: dpNorm(d.nome), crit: indCritDe(d) }));
         const dias = {};   // 'sigla|AAAA-MM-DD' -> { mes, erro }
+        const man = indLerManual(), corte = man && Number(man.ano) === ano && man.ate ? String(man.ate) : '';
+        if (corte && man.dados) deps.forEach(d => { const v = man.dados[d.sigla]; if (Array.isArray(v)) v.forEach((x, m) => { if (m < 12 && Array.isArray(x)) { r[d.sigla][m].erro += Number(x[0]) || 0; r[d.sigla][m].acerto += Number(x[1]) || 0; } }); });
         inventarios.forEach(i => {
           if (!i || i.soValidacao || !i.dataFinal || !i.deposito) return;
           const dt = new Date(i.dataFinal); if (isNaN(dt) || dt.getFullYear() !== ano) return;
+          if (corte && indYmdL(dt) <= corte) return;   // até a data de corte valem os números lançados à mão
           const c = dpNorm(i.deposito.codigo), nm = dpNorm(i.deposito.nome);
           const alvo = chaves.find(k => (c && c === k.s) || nm === k.n); if (!alvo) return;
           const cel = r[alvo.d.sigla][dt.getMonth()];
@@ -2922,14 +2933,33 @@
         const anos = []; for (let a = anoAtual - 4; a <= anoAtual + 1; a++) anos.push(a);
         const fmt = n => String(n);
         const pct = (a, t) => (a / t * 100).toFixed(1).replace('.', ',') + '%';
-        const cab1 = deps.map(d => `<th colspan="4" class="ac-dep ac-gs">${escHtml(d.nome)}</th>`).join('');
+        const cab1 = deps.map(d => `<th colspan="4" class="ac-dep ac-gs">${escHtml(indRotulo(d))}</th>`).join('');
         const cab2 = deps.map(() => '<th class="ac-gs">Erro</th><th>Acerto</th><th>Total</th><th>%</th>').join('');
         const linhas = indMesesSel().map(i => '<tr><td class="ac-mes">' + IND_MESES[i] + '</td>' + deps.map(d => {
           const c = dados[d.sigla][i], t = c.erro + c.acerto;
           return t ? `<td class="ac-gs">${fmt(c.erro)}</td><td>${fmt(c.acerto)}</td><td>${fmt(t)}</td><td>${pct(c.acerto, t)}</td>` : '<td class="ac-gs"></td><td></td><td></td><td></td>';
         }).join('') + '</tr>').join('');
-        box.innerHTML = `<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(d.nome) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>
+        // RESUMO (igual à planilha): Erro = soma, Acerto = soma, Média = média das % dos meses (meses sem dado não entram)
+        const mesesVis = indMesesSel();
+        const resumo = deps.map(d => {
+          let e = 0, a = 0; const ps = [];
+          mesesVis.forEach(m => { const c = dados[d.sigla][m], t = c.erro + c.acerto; e += c.erro; a += c.acerto; if (t) ps.push(c.acerto / t); });
+          return { e, a, media: ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : null };
+        });
+        const pctN = v => v === null ? '' : (v * 100).toFixed(1).replace('.', ',') + '%';
+        const tabResumo = `<table class="ac-tab ac-resumo" style="margin-top:8px"><colgroup><col style="width:56px">${deps.map(() => '<col style="width:50px"><col style="width:56px"><col style="width:50px"><col style="width:60px">').join('')}</colgroup><tbody>
+            <tr><td class="ac-mes"></td>${deps.map(() => '<td colspan="4" class="ac-gs ac-res-tit">RESUMO</td>').join('')}</tr>
+            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Erro</td><td colspan="2">${x.e}</td>`).join('')}</tr>
+            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Acerto</td><td colspan="2">${x.a}</td>`).join('')}</tr>
+            <tr><td class="ac-mes"></td>${resumo.map(x => `<td colspan="2" class="ac-gs ac-res-rot">Média</td><td colspan="2">${pctN(x.media)}</td>`).join('')}</tr>
+          </tbody></table>`;
+        const manI = indLerManual();
+        const notaMan = manI && Number(manI.ano) === indAno && manI.ate ? `<p class="text-xs ac-aviso mt-1"><b>Origem dos dados:</b> até ${manI.ate.split('-').reverse().join('/')} lançados à mão da planilha${manI.fonte ? ' (' + escHtml(manI.fonte) + ')' : ''}; depois dessa data, inventários do app.</p>` : '';
+        const chipsMes = `<div class="flex items-center gap-1.5 flex-wrap mb-3"><span class="text-xs font-semibold ac-aviso mr-1">Meses:</span>
+            <button onclick="indMesesVisTodos()" class="px-2.5 py-1 rounded-full text-xs font-semibold border ${mesesVis.length === 12 ? 'bg-tbx-navy text-white border-tbx-navy' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}">Todos</button>
+            ${IND_MESES.map((nm, m) => `<button onclick="indMesVis(${m})" class="px-2.5 py-1 rounded-full text-xs font-semibold border ${mesesVis.includes(m) && mesesVis.length < 12 ? 'bg-tbx-navy text-white border-tbx-navy' : mesesVis.includes(m) ? 'bg-blue-50 text-tbx-navy border-blue-200' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}">${nm}</button>`).join('')}</div>`;
+        box.innerHTML = `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
             <button onclick="indAbrirConfig()" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-50"><i class="fa-solid fa-gear mr-2"></i>Configurar depósitos</button>
           </div>
           <div class="ac-scroll"><div class="ac-quadro" style="min-width:${56 + deps.length * 216 + 28}px">
@@ -2937,7 +2967,7 @@
             <table class="ac-tab"><colgroup><col style="width:56px">${deps.map(() => '<col style="width:50px"><col style="width:56px"><col style="width:50px"><col style="width:60px">').join('')}</colgroup><thead>
               <tr><th class="ac-ano"><select onchange="indTrocarAno(this.value)">${anos.map(a => `<option value="${a}" ${a === indAno ? 'selected' : ''}>${a}</option>`).join('')}</select></th>${cab1}</tr>
               <tr class="ac-sub"><th class="ac-data">Data</th>${cab2}</tr>
-            </thead><tbody>${linhas}</tbody></table>
+            </thead><tbody>${linhas}</tbody></table>${tabResumo}
           </div></div>`;
       }
       // Depósitos de Inserção (.INS) e Descarte (.DESC) ficam numa coluna separada, ao lado dos depósitos principais
@@ -3110,6 +3140,15 @@
         cfg[i + 1] = on ? 1 : 0;   // 0 (e não apagar a chave) para a nuvem não ressuscitar
         localStorage.setItem('tbx_ind_meses', JSON.stringify(cfg)); indModo = 'config'; indRender();
       };
+      // Filtro de meses direto na tabela: clicar num mês mostra só ele; clicar em outros vai somando; "Todos" volta a mostrar os 12
+      window.indMesVis = function (m) {
+        const ms = indMesesSel(), cfg = {};
+        let sel = ms.length === 12 ? [m] : (ms.includes(m) ? ms.filter(x => x !== m) : ms.concat(m));
+        if (!sel.length) sel = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        for (let k = 0; k < 12; k++) cfg[k + 1] = sel.includes(k) ? 1 : 0;
+        localStorage.setItem('tbx_ind_meses', JSON.stringify(cfg)); indRender();
+      };
+      window.indMesesVisTodos = function () { const cfg = {}; for (let k = 1; k <= 12; k++) cfg[k] = 1; localStorage.setItem('tbx_ind_meses', JSON.stringify(cfg)); indRender(); };
       window.indTodosMeses = function () { const cfg = {}; for (let m = 1; m <= 12; m++) cfg[m] = 1; localStorage.setItem('tbx_ind_meses', JSON.stringify(cfg)); indModo = 'config'; indRender(); };
       window.indSelecionados = indSelecionados; window.indMesesSel = indMesesSel;
       window.indRender = indRender;
