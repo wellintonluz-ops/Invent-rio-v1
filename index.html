@@ -3001,7 +3001,15 @@
             <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">${modoBtn(false, 'fa-eye', 'Visualizar')}${modoBtn(true, 'fa-pen', 'Editar')}</div>
             <div class="flex items-center gap-3 flex-wrap">
               <span class="text-xs font-semibold ac-aviso">Dados até ${indDataRelatorio().split('-').reverse().join('/')}</span>
-              <button id="ind-btn-email" onclick="indEnviarEmail()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-envelope mr-1.5"></i>Enviar por e-mail</button>
+              <div class="inline-flex items-center gap-1.5">
+                <span id="ind-cc-box" class="${indCcAberto ? 'inline-flex' : 'hidden'} items-center gap-1 bg-white border border-slate-300 rounded-lg pl-2 pr-1 py-0.5">
+                  <span class="text-xs font-semibold text-slate-500">Cópia:</span>
+                  <input id="ind-email-cc" value="${escHtml(indCcValor)}" oninput="indCcValor = this.value" placeholder="email@grupotbx.com.br" title="Separe vários e-mails por vírgula" class="w-56 text-sm px-1 py-1 outline-none">
+                  <button onclick="indCcFechar()" title="Tirar a cópia" class="w-6 h-6 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"><i class="fa-solid fa-xmark"></i></button>
+                </span>
+                <button id="ind-btn-cc" onclick="indCcAbrir()" title="Adicionar alguém em cópia neste envio" class="${indCcAberto ? 'hidden' : ''} w-8 h-8 rounded-lg border border-slate-300 bg-white text-tbx-navy font-bold hover:bg-slate-50"><i class="fa-solid fa-plus"></i></button>
+                <button id="ind-btn-email" onclick="indEnviarEmail()" title="Para: ${IND_EMAIL_PARA}" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-envelope mr-1.5"></i>Enviar por e-mail</button>
+              </div>
               ${anoSel}</div></div><div id="ind-email-aviso"></div>`;
         const edicao = indEditar ? `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
@@ -3172,7 +3180,11 @@
       // O relatório sai sempre com a data do último dia já fechado: o dia útil anterior a hoje (segunda -> sexta),
       // e se nesse dia não houve inventário (feriado), volta até o último dia útil com inventário (no máximo 10 dias).
       const IND_EMAIL_ASSUNTO = 'Relatório de Acuracidade Diário';
-      const IND_EMAIL_PARA = 'wellinton.luz@grupotbx.com.br';   // destinatário padrão (quem precisar de cópia, adiciona no próprio Gmail)
+      const IND_EMAIL_PARA = 'wellinton.luz@grupotbx.com.br';   // destinatário padrão
+      // "+" abre o campo Cópia só para o envio de agora (não fica guardado)
+      let indCcAberto = false, indCcValor = '';
+      window.indCcAbrir = function () { indCcAberto = true; const b = $('ind-cc-box'), p = $('ind-btn-cc'); if (b) { b.classList.remove('hidden'); b.classList.add('inline-flex'); } if (p) p.classList.add('hidden'); const i = $('ind-email-cc'); if (i) i.focus(); };
+      window.indCcFechar = function () { indCcAberto = false; indCcValor = ''; indRender(); };
       function indDataRelatorio(agora) {
         const hoje = agora ? new Date(agora) : new Date();
         const comInv = new Set(); (inventarios || []).forEach(i => { if (i && i.dataFinal && !i.soValidacao) { const d = new Date(i.dataFinal); if (!isNaN(d)) comInv.add(indYmdL(d)); } });
@@ -3220,7 +3232,8 @@
         if (indAno !== new Date().getFullYear()) { indTrocarAno(new Date().getFullYear()); }
         const ref = indDataRelatorio(), dataBr = ref.split('-').reverse().join('/');
         const frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
-        const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(IND_EMAIL_PARA)
+        const cc = (($('ind-email-cc') || {}).value || indCcValor || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /@/.test(x)).join(',');
+        const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(IND_EMAIL_PARA) + (cc ? '&cc=' + encodeURIComponent(cc) : '')
           + '&su=' + encodeURIComponent(IND_EMAIL_ASSUNTO) + '&body=' + encodeURIComponent(frase + '\n\n');
         const blobP = indImagemTabela();
         let copiou = null;
