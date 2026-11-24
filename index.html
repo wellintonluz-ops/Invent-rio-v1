@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261124-161515">
+  <meta name="tbx-versao" content="20261124-164640">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -564,21 +564,26 @@
 
           <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm max-w-6xl mx-auto">
             <h2 id="deposito-inventario-titulo" class="text-lg font-bold text-slate-800 mb-1">Inventário</h2>
-            <p class="text-sm text-slate-500 mb-4">Favor colar aqui os dados via sistema.</p>
+            <p class="text-sm text-slate-500 mb-4">Suba aqui o arquivo exportado do sistema (Produto e Disponível). Cada inventário usa um arquivo novo.</p>
 
-            <!-- Paste Zone (estado vazio) -->
-            <div id="deposito-paste-zone" tabindex="0" onpaste="handleSistemaPaste(event)" onclick="this.focus()" class="border-2 border-dashed border-blue-200 rounded-xl py-12 flex flex-col items-center justify-center text-center cursor-text hover:border-tbx-navy/40 focus:border-tbx-navy focus:outline-none focus:ring-2 focus:ring-tbx-navy/10 transition-colors">
-              <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-300 flex items-center justify-center text-lg mb-3">
-                <i class="fa-solid fa-table-cells"></i>
+            <!-- Arquivo do sistema (estado vazio): .csv ou .xlsx exportado do sistema -->
+            <input type="file" id="deposito-arquivo" accept=".csv,.xlsx,.xls,.txt" class="hidden" onchange="sisArquivoEscolhido(this.files && this.files[0]); this.value = ''">
+            <div id="deposito-paste-zone" tabindex="0" onclick="document.getElementById('deposito-arquivo').click()"
+              ondragover="event.preventDefault(); this.classList.add('bg-blue-50')" ondragleave="this.classList.remove('bg-blue-50')"
+              ondrop="event.preventDefault(); this.classList.remove('bg-blue-50'); sisArquivoEscolhido(event.dataTransfer.files && event.dataTransfer.files[0])"
+              class="border-2 border-dashed border-blue-200 rounded-xl py-12 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-blue-50/50 transition-colors">
+              <div class="w-10 h-10 rounded-lg bg-blue-50 text-tbx-navy flex items-center justify-center text-lg mb-3">
+                <i class="fa-solid fa-file-arrow-up"></i>
               </div>
-              <p class="text-sm text-slate-400">Clique aqui e cole os dados do sistema (Ctrl+V)...</p>
+              <p class="text-sm font-semibold text-slate-600">Clique aqui para escolher o arquivo do sistema</p>
+              <p class="text-xs text-slate-400 mt-1">ou arraste o arquivo para cá (.csv ou .xlsx, ex.: "dados (38).csv"). Só as colunas <b>Produto</b> e <b>Disponível</b> são usadas.</p>
             </div>
 
             <!-- Tabela de dados colados (estado preenchido) -->
-            <div id="deposito-dados-wrap" class="hidden" onpaste="handleSistemaPaste(event)">
+            <div id="deposito-dados-wrap" class="hidden">
               <div class="flex items-start gap-2 bg-blue-50 border border-blue-100 text-blue-800 text-xs rounded-lg px-3 py-2.5 mb-4">
                 <i class="fa-solid fa-circle-info mt-0.5"></i>
-                <span>Copie (Ctrl+C) a tabela do ERP e cole aqui (Ctrl+V). Todas as outras colunas serão descartadas — apenas <strong>Produto</strong> e <strong>Disponível</strong> serão usadas.</span>
+                <span id="deposito-arquivo-info">Dados do arquivo do sistema: apenas <strong>Produto</strong> e <strong>Disponível</strong> foram usados.</span>
               </div>
 
               <div class="overflow-x-auto border border-blue-100 rounded-lg">
@@ -586,12 +591,8 @@
                   <thead class="bg-blue-50/70 border-b border-blue-100 text-xs font-semibold uppercase text-slate-500">
                     <tr>
                       <th class="py-2.5 px-3">#</th>
-                      <th class="py-2.5 px-3">ID</th>
-                      <th class="py-2.5 px-3">Locação</th>
                       <th class="py-2.5 px-3">Produto</th>
                       <th class="py-2.5 px-3">Disponível</th>
-                      <th class="py-2.5 px-3">Bloqueado</th>
-                      <th class="py-2.5 px-3">Em Auditoria</th>
                       <th class="py-2.5 px-3 text-center">Ações</th>
                     </tr>
                   </thead>
@@ -605,7 +606,7 @@
                 <p class="text-xs text-slate-400">Clique numa célula para editar. Apagar linha (lixeira) e incluir item à mão são só do ADM.</p>
                 <button onclick="invSisAbrir()" class="adm-sis-btn hidden text-xs font-semibold text-tbx-navy hover:underline flex items-center flex-shrink-0 ml-4"><i class="fa-solid fa-plus mr-1"></i> Incluir item do sistema (ADM)</button>
                 <button onclick="limparDadosSistema()" class="text-xs font-semibold text-tbx-red hover:underline flex items-center flex-shrink-0 ml-4">
-                  <i class="fa-solid fa-trash-can mr-1"></i> Limpar e colar de novo
+                  <i class="fa-solid fa-trash-can mr-1"></i> Limpar e subir outro arquivo
                 </button>
               </div>
 
@@ -3905,7 +3906,7 @@
       document.getElementById('deposito-inventario').classList.remove('hidden');
       document.getElementById('page-title').innerText = `Inventário - ${selectedDeposito.nome}`;
       document.getElementById('deposito-inventario-titulo').innerText = `Inventário - ${selectedDeposito.nome} (${selectedDeposito.codigo})`;
-      sistemaData = [];
+      sistemaData = []; sisArquivoNome = '';
       renderSistemaTable();
     }
 
@@ -3941,6 +3942,7 @@
       inventarioAtual = {
         deposito: { nome: selectedDeposito.nome, codigo: selectedDeposito.codigo },
         dadosSistema: JSON.parse(JSON.stringify(sistemaData)),
+        sistemaArquivo: sisArquivoNome || '',
         tentativas: [],
         contagemFisica: [],
         colaboradorAtual: selectedDeposito.colaborador,
@@ -4762,12 +4764,8 @@
         return `
         <tr class="${linhaClasse}">
           <td class="py-2 px-3 text-xs text-slate-400">${i + 1}</td>
-          <td class="py-2 px-3">${row.id}</td>
-          <td class="py-2 px-3 text-tbx-navy">${row.locacao}</td>
-          <td class="py-2 px-3 font-semibold ${cadastrado ? 'text-slate-800' : 'text-tbx-red'}">${row.produto}</td>
-          <td class="py-2 px-3 font-bold text-emerald-700">${row.disponivel}</td>
-          <td class="py-2 px-3 text-slate-500">${row.bloqueado}</td>
-          <td class="py-2 px-3 text-slate-500">${row.emAuditoria}</td>
+          <td class="py-2 px-3 font-semibold ${cadastrado ? 'text-slate-800' : 'text-tbx-red'}">${escHtml(row.produto)}</td>
+          <td class="py-2 px-3 font-bold text-emerald-700">${escHtml(row.disponivel)}</td>
           <td class="py-2 px-3 text-center">
             <div class="flex items-center justify-center gap-2">
               <button onclick="toggleNaoContadoSistema(${i})" title="Existe, mas não foi contado" class="text-xs font-semibold px-2 py-1 rounded transition-colors ${row.naoContado ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">NC</button>
@@ -4956,8 +4954,87 @@
     }
 
     function limparDadosSistema() {
-      sistemaData = [];
+      sistemaData = []; sisArquivoNome = '';
       renderSistemaTable();
+    }
+
+    // DADOS DO SISTEMA POR ARQUIVO (.csv / .xlsx exportado do sistema): usa só as colunas Produto e Disponível.
+    // Cada inventário precisa de um arquivo novo: se os dados forem iguais aos do último inventário do mesmo depósito, avisa antes de seguir.
+    let sisArquivoNome = '';
+    function sisLerCsv(texto) {
+      texto = texto.replace(/^\uFEFF/, '').replace(/[\u200B-\u200D]/g, '').replace(/\u00A0/g, ' ');
+      const l1 = (texto.split(/\r\n|\r|\n/).find(l => l.trim()) || '');
+      const cont = c => (l1.match(new RegExp('\\' + c, 'g')) || []).length;
+      const sep = cont('\t') > 0 ? '\t' : (cont(';') >= cont(',') ? ';' : ',');
+      const linhas = []; let lin = [], campo = '', aspas = false;
+      for (let i = 0; i < texto.length; i++) {
+        const c = texto[i];
+        if (aspas) { if (c === '"') { if (texto[i + 1] === '"') { campo += '"'; i++; } else aspas = false; } else campo += c; continue; }
+        if (c === '"') aspas = true;
+        else if (c === sep) { lin.push(campo); campo = ''; }
+        else if (c === '\n' || c === '\r') { if (c === '\r' && texto[i + 1] === '\n') i++; lin.push(campo); linhas.push(lin); lin = []; campo = ''; }
+        else campo += c;
+      }
+      if (campo !== '' || lin.length) { lin.push(campo); linhas.push(lin); }
+      return linhas.filter(r => r.some(x => String(x).trim() !== ''));
+    }
+    async function sisLerArquivo(arq) {
+      const nome = (arq.name || '').toLowerCase();
+      const buf = await arq.arrayBuffer();
+      if (/\.(xlsx|xls)$/.test(nome)) {
+        const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      }
+      let texto = new TextDecoder('utf-8').decode(buf);
+      if (texto.includes('\uFFFD')) texto = new TextDecoder('windows-1252').decode(buf);   // arquivo salvo em ANSI
+      return sisLerCsv(texto);
+    }
+    // Chave para comparar dois conjuntos de dados do sistema: produto + quantidade, sem depender da ordem
+    const sisNumero = v => { let t = String(v == null ? '' : v).trim(); if (!t) return ''; if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, ''); t = t.replace(',', '.'); const n = Number(t); return isNaN(n) ? t : String(n); };
+    const sisAssinatura = lista => (lista || []).filter(r => r && String(r.produto || '').trim()).map(r => String(r.produto).trim().toUpperCase() + '|' + sisNumero(r.disponivel)).sort().join('\n');
+    function sisUltimoInventarioDeposito(dep) {
+      const cod = dpNorm(dep.codigo), nm = dpNorm(dep.nome);
+      let ult = null, tUlt = 0;
+      (inventarios || []).forEach(i => {
+        if (!i || i.soValidacao || i.paiId || !i.deposito || !Array.isArray(i.dadosSistema)) return;
+        if (!((cod && dpNorm(i.deposito.codigo) === cod) || dpNorm(i.deposito.nome) === nm)) return;
+        const t = new Date(i.dataFinal || i.dataInicio || (i.tentativas && i.tentativas[0] && i.tentativas[0].dataInicio) || 0).getTime() || 0;
+        if (!ult || t > tUlt) { ult = i; tUlt = t; }
+      });
+      return ult;
+    }
+    async function sisArquivoEscolhido(arq) {
+      if (!arq) return;
+      let linhas;
+      try { linhas = await sisLerArquivo(arq); }
+      catch (e) { alert('Não consegui abrir o arquivo "' + arq.name + '". Use o arquivo .csv ou .xlsx exportado do sistema.'); return; }
+      // acha a linha de cabeçalho com Produto e Disponível (pode não ser a primeira)
+      let hIdx = -1, pIdx = -1, dIdx = -1;
+      for (let r = 0; r < Math.min(linhas.length, 20) && hIdx < 0; r++) {
+        const h = linhas[r].map(normalizeHeader);
+        const p = h.findIndex(x => x === 'produto'), d = h.findIndex(x => x === 'disponivel');
+        if (p >= 0 && d >= 0) { hIdx = r; pIdx = p; dIdx = d; }
+      }
+      if (hIdx < 0) {
+        const amostra = (linhas[0] || []).map(c => String(c).trim()).filter(Boolean).slice(0, 10).join(' | ') || '(vazio)';
+        alert('O arquivo "' + arq.name + '" não tem as colunas Produto e Disponível, então nada foi carregado.\n\nCabeçalho encontrado:\n' + amostra + '\n\nExporte do sistema a tabela de estoque do depósito (com Produto e Disponível) e tente de novo.');
+        return;
+      }
+      const todas = linhas.slice(hIdx + 1).map(r => ({ id: '', locacao: '', produto: String(r[pIdx] == null ? '' : r[pIdx]).trim(), disponivel: String(r[dIdx] == null ? '' : r[dIdx]).trim(), bloqueado: '', emAuditoria: '', naoContado: false }));
+      const validas = todas.filter(r => r.produto !== '');
+      if (!validas.length) { alert('O arquivo "' + arq.name + '" não tem nenhum produto.'); return; }
+      // mesmo conjunto de dados do último inventário deste depósito?
+      const ult = selectedDeposito ? sisUltimoInventarioDeposito(selectedDeposito) : null;
+      if (ult && ult.dadosSistema.length && sisAssinatura(ult.dadosSistema) === sisAssinatura(validas)) {
+        const quando = ult.dataFinal ? new Date(ult.dataFinal).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        if (!confirm(`Esses dados são os mesmos do último inventário${quando ? ' (' + quando + ')' : ''}.\n\nDeseja seguir mesmo assim?`)) return;
+      }
+      if (validas.length < todas.length) alert(`${todas.length - validas.length} linha(s) sem Produto foram ignoradas.`);
+      sistemaData = validas; sisArquivoNome = arq.name || '';
+      renderSistemaTable();
+      const info = document.getElementById('deposito-arquivo-info');
+      if (info) info.innerHTML = `Arquivo <strong>${escHtml(sisArquivoNome)}</strong> — ${validas.length} produto(s). Apenas <strong>Produto</strong> e <strong>Disponível</strong> foram usados.`;
     }
 
     // CONTROLE DE INVENTÁRIO (novo): Validação / Saldo / Entrada Manual.
