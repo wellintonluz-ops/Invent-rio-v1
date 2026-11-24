@@ -2932,11 +2932,13 @@
         const chaves = deps.map(d => ({ d, s: dpNorm(d.sigla), n: dpNorm(d.nome), crit: indCritDe(d) }));
         const dias = {};   // 'sigla|AAAA-MM-DD' -> { mes, erro }
         const man = indLerManual(), corte = man && Number(man.ano) === ano && man.ate ? String(man.ate) : '';
+        const hoje = indYmdL(new Date());   // o dia de hoje ainda está sendo inventariado: entra no indicador só amanhã
         if (corte && man.dados) deps.forEach(d => { const v = man.dados[d.sigla]; if (Array.isArray(v)) v.forEach((x, m) => { if (m < 12 && Array.isArray(x)) { r[d.sigla][m].erro += Number(x[0]) || 0; r[d.sigla][m].acerto += Number(x[1]) || 0; } }); });
         inventarios.forEach(i => {
           if (!i || i.soValidacao || !i.dataFinal || !i.deposito) return;
           const dt = new Date(i.dataFinal); if (isNaN(dt) || dt.getFullYear() !== ano) return;
           if (corte && indYmdL(dt) <= corte) return;   // até a data de corte valem os números lançados à mão
+          if (indYmdL(dt) >= hoje) return;
           const c = dpNorm(i.deposito.codigo), nm = dpNorm(i.deposito.nome);
           const alvo = chaves.find(k => (c && c === k.s) || nm === k.n); if (!alvo) return;
           const cel = r[alvo.d.sigla][dt.getMonth()];
@@ -2997,10 +2999,20 @@
         const modoBtn = (ed, ic, t) => `<button onclick="indModoEd(${ed})" class="px-3 py-1.5 text-sm font-semibold ${indEditar === ed ? 'bg-tbx-navy text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}"><i class="fa-solid ${ic} mr-1.5"></i>${t}</button>`;
         const barra = `<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">${modoBtn(false, 'fa-eye', 'Visualizar')}${modoBtn(true, 'fa-pen', 'Editar')}</div>
-            ${anoSel}</div>`;
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="text-xs font-semibold ac-aviso">Dados até ${indDataRelatorio().split('-').reverse().join('/')}</span>
+              <button id="ind-btn-email" onclick="indEnviarEmail()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-envelope mr-1.5"></i>Enviar por e-mail</button>
+              ${anoSel}</div></div><div id="ind-email-aviso"></div>`;
         const edicao = indEditar ? `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
             <button onclick="indAbrirConfig()" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-50"><i class="fa-solid fa-gear mr-2"></i>Configurar depósitos</button>
+          </div>
+          <div class="flex items-end gap-2 flex-wrap mb-3 bg-white/70 border border-slate-300 rounded-lg p-2.5">
+            <span class="text-xs font-bold text-slate-700 self-center"><i class="fa-solid fa-envelope mr-1"></i>E-mail do relatório:</span>
+            <label class="text-[11px] font-semibold text-slate-600">Para<input id="ind-email-para" value="${escHtml(indLerEmail().para || '')}" placeholder="email@grupotbx.com.br" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
+            <label class="text-[11px] font-semibold text-slate-600">Cópia (opcional)<input id="ind-email-cc" value="${escHtml(indLerEmail().cc || '')}" placeholder="separe por vírgula" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
+            <label class="text-[11px] font-semibold text-slate-600">Assunto<input id="ind-email-assunto" value="${escHtml(indLerEmail().assunto || IND_EMAIL_ASSUNTO)}" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
+            <button onclick="indSalvarEmail()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90">Salvar</button>
           </div>` : '';
         box.innerHTML = `${barra}${edicao}
           <div class="ac-scroll"><div class="ac-quadro" style="min-width:${56 + deps.length * 216 + 28}px">
@@ -3010,6 +3022,7 @@
               <tr class="ac-sub"><th class="ac-data">Data</th>${cab2}</tr>
             </thead><tbody>${linhas}</tbody></table>
           </div></div>`;
+        indCarregarH2C().catch(() => {});
       }
       // Depósitos de Inserção (.INS) e Descarte (.DESC) ficam numa coluna separada, ao lado dos depósitos principais
       const indEhArea = d => /\.(ins|desc)$/i.test(String(d.sigla || '')) || /insercao|descarte/.test(dpNorm(d.nome));
@@ -3162,6 +3175,85 @@
       window.indAbrirConfig = function () { indModo = 'config'; indRender(); };
       window.indFecharConfig = function () { if (!indSelecionados().length) return; indModo = 'tabela'; indRender(); };
       window.indTrocarAno = function (v) { indAno = parseInt(v, 10) || indAno; indRender(); };
+      // ----- Enviar a tabela por e-mail -----
+      // O relatório sai sempre com a data do último dia já fechado: o dia útil anterior a hoje (segunda -> sexta),
+      // e se nesse dia não houve inventário (feriado), volta até o último dia útil com inventário (no máximo 10 dias).
+      const IND_EMAIL_ASSUNTO = 'Relatório de Acuracidade Diário';
+      const indLerEmail = () => { try { const o = JSON.parse(localStorage.getItem('tbx_ind_email')); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } };
+      window.indSalvarEmail = function () {
+        const v = id => (($(id) || {}).value || '').trim();
+        localStorage.setItem('tbx_ind_email', JSON.stringify({ para: v('ind-email-para'), cc: v('ind-email-cc'), assunto: v('ind-email-assunto') || IND_EMAIL_ASSUNTO }));
+        indRender(); indAvisoEmail('ok', 'E-mail do relatório salvo.');
+      };
+      function indDataRelatorio(agora) {
+        const hoje = agora ? new Date(agora) : new Date();
+        const comInv = new Set(); (inventarios || []).forEach(i => { if (i && i.dataFinal && !i.soValidacao) { const d = new Date(i.dataFinal); if (!isNaN(d)) comInv.add(indYmdL(d)); } });
+        const util = d => d.getDay() !== 0 && d.getDay() !== 6;
+        const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+        while (!util(d)) d.setDate(d.getDate() - 1);
+        const primeiro = indYmdL(d);
+        for (let k = 0; k < 10; k++) { if (util(d) && comInv.has(indYmdL(d))) return indYmdL(d); d.setDate(d.getDate() - 1); }
+        return primeiro;
+      }
+      window.indDataRelatorio = indDataRelatorio;
+      function indAvisoEmail(tipo, html) {
+        const b = $('ind-email-aviso'); if (!b) return;
+        const cor = tipo === 'ok' ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : tipo === 'erro' ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-blue-50 border-blue-300 text-blue-900';
+        b.innerHTML = `<div class="mb-3 border rounded-lg px-3 py-2 text-sm ${cor}">${html}</div>`;
+      }
+      let indH2C = null;
+      function indCarregarH2C() {
+        if (window.html2canvas) return Promise.resolve(window.html2canvas);
+        return indH2C || (indH2C = new Promise((ok, falha) => {
+          const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+          sc.onload = () => ok(window.html2canvas); sc.onerror = () => { indH2C = null; falha(new Error('não carregou o gerador de imagem')); };
+          document.head.appendChild(sc);
+        }));
+      }
+      // Gera a imagem da tabela (igual ao print), com a moldura azul-acinzentada da planilha
+      async function indImagemTabela() {
+        const h2c = await indCarregarH2C();
+        const q = document.querySelector('#ind-conteudo .ac-quadro'); if (!q) throw new Error('tabela não encontrada');
+        const rq = q.getBoundingClientRect(), W = Math.ceil(rq.width) + 2, H = Math.ceil(rq.height) + 2;   // inclui a borda preta da moldura
+        const cv = await h2c(q, { backgroundColor: '#8496b0', scale: 2, logging: false, useCORS: true,
+          width: W, height: H, windowWidth: Math.max(document.documentElement.clientWidth, W + 80),
+          onclone: doc => {
+            const c = doc.querySelector('#ind-conteudo .ac-quadro'); if (!c) return;
+            c.querySelectorAll('select').forEach(s => { const sp = doc.createElement('span'); sp.textContent = s.options[s.selectedIndex] ? s.options[s.selectedIndex].text : s.value; s.replaceWith(sp); });
+            c.querySelectorAll('.ac-dep button').forEach(bt => { const sp = doc.createElement('span'); sp.textContent = bt.textContent; bt.replaceWith(sp); });
+          } });
+        // moldura de 14px na cor de fundo da tela, como no print
+        const m = 14 * 2, out = document.createElement('canvas'); out.width = cv.width + 2 * m; out.height = cv.height + 2 * m;
+        const g = out.getContext('2d'); g.fillStyle = '#8496b0'; g.fillRect(0, 0, out.width, out.height); g.drawImage(cv, m, m);
+        return await new Promise((ok, falha) => out.toBlob(b => b ? ok(b) : falha(new Error('falha ao gerar a imagem')), 'image/png'));
+      }
+      window.indImagemTabela = indImagemTabela;
+      window.indEnviarEmail = function () {
+        if (indAno !== new Date().getFullYear()) { indTrocarAno(new Date().getFullYear()); }
+        const ref = indDataRelatorio(), dataBr = ref.split('-').reverse().join('/');
+        const cfg = indLerEmail(), frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
+        const url = 'https://mail.google.com/mail/?view=cm&fs=1' + (cfg.para ? '&to=' + encodeURIComponent(cfg.para) : '') + (cfg.cc ? '&cc=' + encodeURIComponent(cfg.cc) : '')
+          + '&su=' + encodeURIComponent(cfg.assunto || IND_EMAIL_ASSUNTO) + '&body=' + encodeURIComponent(frase + '\n\n');
+        const blobP = indImagemTabela();
+        let copiou = null;
+        try {
+          if (navigator.clipboard && window.ClipboardItem) copiou = navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]).then(() => true, () => false);
+        } catch (e) { copiou = null; }
+        const jan = window.open(url, '_blank');   // abre o Gmail já com destinatário, assunto e a frase do dia
+        indAvisoEmail('info', '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Gerando a imagem da tabela...');
+        Promise.resolve(copiou).then(async ok => {
+          if (ok) {
+            indAvisoEmail('ok', `<b><i class="fa-solid fa-check mr-1"></i>Tabela copiada!</b> No Gmail, clique na linha em branco abaixo da frase <i>"${escHtml(frase)}"</i>, aperte <b>Ctrl+V</b> para colar a tabela e depois <b>Enviar</b>.${jan ? '' : ' <br>O navegador bloqueou a janela do Gmail: <a class="underline font-semibold" href="' + url + '" target="_blank">clique aqui para abrir</a>.'}`);
+            return;
+          }
+          // sem permissão de copiar: baixa a imagem para anexar
+          try {
+            const b = await blobP, a = document.createElement('a');
+            a.href = URL.createObjectURL(b); a.download = `Acuracidade ${dataBr.replace(/\//g, '-')}.png`; document.body.appendChild(a); a.click(); a.remove();
+            indAvisoEmail('info', `Não consegui copiar a imagem automaticamente, então ela foi <b>baixada</b> (${escHtml(a.download)}). No Gmail, arraste a imagem para dentro da mensagem e clique em <b>Enviar</b>.${jan ? '' : ' <a class="underline font-semibold" href="' + url + '" target="_blank">Abrir o Gmail</a>.'}`);
+          } catch (e) { indAvisoEmail('erro', 'Não consegui gerar a imagem da tabela (' + escHtml(e.message || String(e)) + '). Tire o print manualmente desta vez.'); }
+        });
+      };
       // Clicar no nome do depósito na tabela: abre a Visualização de Inventário já dentro desse depósito
       window.indAbrirDeposito = function (nome) {
         if (window.usrPode && !usrPode('controle-inventario')) { alert('Seu login não tem acesso à Visualização de Inventário.'); return; }
