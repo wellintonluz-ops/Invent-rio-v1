@@ -3006,13 +3006,6 @@
         const edicao = indEditar ? `${chipsMes}<div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div><p class="text-xs ac-aviso"><b>Critério:</b> ${deps.map(d => escHtml(indRotulo(d)) + ' — ' + IND_CRIT[indCritDe(d)]).join(' · ')}</p>${notaMan}</div>
             <button onclick="indAbrirConfig()" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-50"><i class="fa-solid fa-gear mr-2"></i>Configurar depósitos</button>
-          </div>
-          <div class="flex items-end gap-2 flex-wrap mb-3 bg-white/70 border border-slate-300 rounded-lg p-2.5">
-            <span class="text-xs font-bold text-slate-700 self-center"><i class="fa-solid fa-envelope mr-1"></i>E-mail do relatório:</span>
-            <label class="text-[11px] font-semibold text-slate-600">Para<input id="ind-email-para" value="${escHtml(indLerEmail().para || '')}" placeholder="email@grupotbx.com.br" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
-            <label class="text-[11px] font-semibold text-slate-600">Cópia (opcional)<input id="ind-email-cc" value="${escHtml(indLerEmail().cc || '')}" placeholder="separe por vírgula" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
-            <label class="text-[11px] font-semibold text-slate-600">Assunto<input id="ind-email-assunto" value="${escHtml(indLerEmail().assunto || IND_EMAIL_ASSUNTO)}" class="block w-64 border border-slate-300 rounded px-2 py-1 text-sm"></label>
-            <button onclick="indSalvarEmail()" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90">Salvar</button>
           </div>` : '';
         box.innerHTML = `${barra}${edicao}
           <div class="ac-scroll"><div class="ac-quadro" style="min-width:${56 + deps.length * 216 + 28}px">
@@ -3179,12 +3172,7 @@
       // O relatório sai sempre com a data do último dia já fechado: o dia útil anterior a hoje (segunda -> sexta),
       // e se nesse dia não houve inventário (feriado), volta até o último dia útil com inventário (no máximo 10 dias).
       const IND_EMAIL_ASSUNTO = 'Relatório de Acuracidade Diário';
-      const indLerEmail = () => { try { const o = JSON.parse(localStorage.getItem('tbx_ind_email')); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; } };
-      window.indSalvarEmail = function () {
-        const v = id => (($(id) || {}).value || '').trim();
-        localStorage.setItem('tbx_ind_email', JSON.stringify({ para: v('ind-email-para'), cc: v('ind-email-cc'), assunto: v('ind-email-assunto') || IND_EMAIL_ASSUNTO }));
-        indRender(); indAvisoEmail('ok', 'E-mail do relatório salvo.');
-      };
+      const IND_EMAIL_PARA = 'wellinton.luz@grupotbx.com.br';   // destinatário padrão (quem precisar de cópia, adiciona no próprio Gmail)
       function indDataRelatorio(agora) {
         const hoje = agora ? new Date(agora) : new Date();
         const comInv = new Set(); (inventarios || []).forEach(i => { if (i && i.dataFinal && !i.soValidacao) { const d = new Date(i.dataFinal); if (!isNaN(d)) comInv.add(indYmdL(d)); } });
@@ -3231,9 +3219,9 @@
       window.indEnviarEmail = function () {
         if (indAno !== new Date().getFullYear()) { indTrocarAno(new Date().getFullYear()); }
         const ref = indDataRelatorio(), dataBr = ref.split('-').reverse().join('/');
-        const cfg = indLerEmail(), frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
-        const url = 'https://mail.google.com/mail/?view=cm&fs=1' + (cfg.para ? '&to=' + encodeURIComponent(cfg.para) : '') + (cfg.cc ? '&cc=' + encodeURIComponent(cfg.cc) : '')
-          + '&su=' + encodeURIComponent(cfg.assunto || IND_EMAIL_ASSUNTO) + '&body=' + encodeURIComponent(frase + '\n\n');
+        const frase = `Segue o relatório de acuracidade referente ao dia ${dataBr}.`;
+        const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(IND_EMAIL_PARA)
+          + '&su=' + encodeURIComponent(IND_EMAIL_ASSUNTO) + '&body=' + encodeURIComponent(frase + '\n\n');
         const blobP = indImagemTabela();
         let copiou = null;
         try {
