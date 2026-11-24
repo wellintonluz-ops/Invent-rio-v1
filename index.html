@@ -2952,7 +2952,7 @@
           }
           const linhas = indLinhas(i);
           if (alvo.crit === 'dia') {
-            if (!linhas.length) return;
+            // inventário "sem produto" (sistema e físico vazios) também é um dia inventariado e certo: conta como acerto
             const k = alvo.d.sigla + '|' + dt.getFullYear() + '-' + dt.getMonth() + '-' + dt.getDate();
             const x = dias[k] || (dias[k] = { mes: dt.getMonth(), sigla: alvo.d.sigla, erro: false });
             if (linhas.some(l => !l.contaComoOk)) x.erro = true;
