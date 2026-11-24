@@ -583,7 +583,8 @@
               </div>
 
               <div class="flex items-center justify-between mt-3">
-                <p class="text-xs text-slate-400">Clique numa célula para editar. Use o ícone de lixeira para remover uma linha antes de processar.</p>
+                <p class="text-xs text-slate-400">Clique numa célula para editar. Apagar linha (lixeira) e incluir item à mão são só do ADM.</p>
+                <button onclick="invSisAbrir()" class="adm-sis-btn hidden text-xs font-semibold text-tbx-navy hover:underline flex items-center flex-shrink-0 ml-4"><i class="fa-solid fa-plus mr-1"></i> Incluir item do sistema (ADM)</button>
                 <button onclick="limparDadosSistema()" class="text-xs font-semibold text-tbx-red hover:underline flex items-center flex-shrink-0 ml-4">
                   <i class="fa-solid fa-trash-can mr-1"></i> Limpar e colar de novo
                 </button>
@@ -670,6 +671,33 @@
           <div id="pp-resumo" class="hidden max-w-4xl mx-auto bg-white p-6 rounded-xl border border-blue-100 shadow-sm"></div>
 
           <!-- SKU incorreto / posição vazia com produto -->
+          <div id="modal-inv-sis" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) this.classList.add('hidden')">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto">
+              <div class="flex justify-between items-center mb-1">
+                <h3 class="text-base font-bold text-tbx-navy"><i class="fa-solid fa-database mr-1"></i> Itens do sistema deste inventário (ADM)</h3>
+                <button onclick="document.getElementById('modal-inv-sis').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <p class="text-xs text-slate-500 mb-3">Inclua à mão um item que faltou nos dados do sistema ou apague uma linha errada. Vale para a comparação ao encerrar a contagem e fica registrado no inventário.</p>
+              <div class="grid grid-cols-1 sm:grid-cols-[1fr_8rem_8rem_auto] gap-2 items-end bg-blue-50/60 border border-blue-100 rounded-lg p-3 mb-3">
+                <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Produto (SKU)</label><input id="inv-sis-sku" list="inv-sis-skus" type="text" autocomplete="off" data-sem-corretor class="w-full border border-slate-300 rounded-lg p-2 text-sm font-mono uppercase"><datalist id="inv-sis-skus"></datalist></div>
+                <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Disponível</label><input id="inv-sis-qtd" type="number" min="0" step="1" class="w-full border border-slate-300 rounded-lg p-2 text-sm"></div>
+                <div><label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Locação</label><input id="inv-sis-loc" type="text" class="w-full border border-slate-300 rounded-lg p-2 text-sm"></div>
+                <button onclick="invSisIncluir()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-plus mr-1"></i> Incluir</button>
+              </div>
+              <p id="inv-sis-erro" class="hidden text-xs text-rose-600 mb-2"></p>
+              <div class="border border-blue-100 rounded-lg overflow-x-auto"><table class="w-full text-sm"><thead class="bg-blue-50/70 text-xs uppercase text-slate-500"><tr><th class="py-2 px-3 text-left">Locação</th><th class="py-2 px-3 text-left">Produto</th><th class="py-2 px-3 text-center">Disponível</th><th class="py-2 px-3 text-left">Origem</th><th class="py-2 px-3 text-center">Apagar</th></tr></thead><tbody id="inv-sis-tbody" class="divide-y divide-blue-50"></tbody></table></div>
+            </div>
+          </div>
+          <div id="modal-inv-apagar" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) this.classList.add('hidden')">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl p-5 max-h-[90vh] overflow-y-auto">
+              <div class="flex justify-between items-center mb-1">
+                <h3 id="inv-apagar-titulo" class="text-base font-bold text-tbx-navy"></h3>
+                <button onclick="document.getElementById('modal-inv-apagar').classList.add('hidden')" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              <p class="text-xs text-slate-500 mb-3">Só ADM. O inventário apagado sai da Visualização, dos Inventários feitos e dos indicadores para todos (fica guardada uma cópia de segurança). Entradas que já foram validadas no saldo não são desfeitas.</p>
+              <div class="border border-blue-100 rounded-lg overflow-x-auto"><table class="w-full text-sm"><thead class="bg-blue-50/70 text-xs uppercase text-slate-500"><tr><th class="py-2 px-3 text-left">Depósito</th><th class="py-2 px-3 text-left">Finalizado em</th><th class="py-2 px-3 text-left">Quem contou</th><th class="py-2 px-3 text-center">Itens</th><th class="py-2 px-3 text-center">Status</th><th class="py-2 px-3 text-center"></th></tr></thead><tbody id="inv-apagar-tbody" class="divide-y divide-blue-50"></tbody></table></div>
+            </div>
+          </div>
           <div id="modal-pp-div" class="hidden fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
             <h3 class="text-base font-bold text-tbx-navy mb-1">Divergência nesta posição</h3>
@@ -702,6 +730,7 @@
               <i class="fa-solid fa-arrow-left mr-2"></i> Voltar
             </button>
             <h2 id="contagem-titulo" class="hidden md:block text-sm font-bold text-slate-600"></h2>
+            <button onclick="invSisAbrir()" class="adm-sis-btn hidden ml-auto mr-2 px-3 py-2 rounded-lg text-xs font-semibold border border-tbx-navy text-tbx-navy hover:bg-blue-50"><i class="fa-solid fa-database mr-1"></i> Itens do sistema (ADM)</button>
             <button onclick="encerrarContagem()" class="bg-tbx-red hover:bg-rose-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm flex items-center flex-shrink-0">
               <i class="fa-solid fa-flag-checkered mr-2"></i> Encerrar Contagem
             </button>
@@ -1267,7 +1296,8 @@
             </button>
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
               <h2 id="visualizacao-detalhe-titulo" class="text-base font-bold text-slate-800"></h2>
-              <button onclick="visExportarExcel()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700"><i class="fa-solid fa-file-excel mr-1"></i> Baixar Excel</button>
+              <div class="flex gap-2"><button onclick="invAbrirApagar({ deposito: visualizacaoDepositoAtual })" class="adm-sis-btn hidden px-4 py-2 rounded-lg text-sm font-semibold border border-rose-300 text-rose-700 hover:bg-rose-50"><i class="fa-solid fa-trash-can mr-1"></i> Apagar inventário (ADM)</button>
+              <button onclick="visExportarExcel()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700"><i class="fa-solid fa-file-excel mr-1"></i> Baixar Excel</button></div>
             </div>
             <div class="flex items-center gap-3 mb-3 min-h-[1.25rem]"><span id="visualizacao-inventario-tbody-info" class="text-xs text-slate-500"></span><button onclick="xfLimpar('visualizacao-inventario-tbody')" id="visualizacao-inventario-tbody-limpar" class="hidden text-xs font-semibold text-tbx-red hover:underline">Limpar filtros</button></div>
 
@@ -2450,6 +2480,11 @@
         return t[tab] === true;
       };
       // Permissão exata de uma tela (sem juntar Visualização e Inventários feitos): usada nas abas da Visualização
+      window.usrEhAdm = function () {
+        const s = sessao();
+        if (!s) return location.hash === '#nuvem-teste';
+        return ehAdm(s.login);
+      };
       window.usrPodeTela = function (tab) {
         const s = sessao();
         if (!s) return location.hash === '#nuvem-teste';
@@ -3021,7 +3056,7 @@
             <button onclick="indMoverDia(1)" title="Próximo dia" class="w-9 h-9 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"><i class="fa-solid fa-chevron-right"></i></button>
             <button onclick="indSetDia(indDiaRelGlobal(-1))" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Ontem</button>
             <button onclick="indSetDia(indDiaRelGlobal(0))" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Hoje</button>
-            <button onclick="indToggleDiv()" title="${indSoDiv ? 'Clique para voltar a ver por depósito' : 'Mostra só as divergências de todos os depósitos deste dia'}" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoDiv ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 ring-2 ring-offset-1 ring-rose-300' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid ${indSoDiv ? 'fa-filter-circle-xmark' : 'fa-triangle-exclamation'} mr-1.5"></i>${indSoDiv ? 'Só divergências: ligado (clique para desligar)' : 'Filtrar divergências'}</button>
+            <button onclick="indToggleDiv()" title="${indSoDiv ? 'Clique para voltar a ver por depósito' : 'Mostra só as divergências de todos os depósitos deste dia'}" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoDiv ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 ring-2 ring-offset-1 ring-rose-300' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid ${indSoDiv ? 'fa-filter-circle-xmark' : 'fa-triangle-exclamation'} mr-1.5"></i>${indSoDiv ? 'Só divergências: ligado (clique para desligar)' : 'Filtrar divergências'}</button>${ehAdminLogado() ? `<button onclick="invAbrirApagar({ dia: '${indDia}'${indDepSel && !indSoDiv ? `, deposito: '${dpJs(indDepSel)}'` : ''} })" class="px-3 py-2 rounded-lg text-sm font-semibold border border-rose-300 text-rose-700 hover:bg-rose-50"><i class="fa-solid fa-trash-can mr-1.5"></i>Apagar inventário (ADM)</button>` : ''}
             <span class="ml-auto text-xs text-slate-500">${nomes.length ? `${nVistos} de ${nomes.length} depósito${nomes.length > 1 ? 's' : ''} já visto${nVistos === 1 ? '' : 's'}` : ''}</span>
           </div>
           ${nomes.length ? `<div class="mt-4 flex flex-wrap gap-2">${botoes}</div>` : '<div class="mt-4 bg-white rounded-xl border border-blue-100 p-8 text-center text-sm text-slate-400">Nenhum inventário finalizado neste dia.</div>'}
@@ -3338,6 +3373,7 @@
     // Tudo é salvo sozinho (a cada segundo); se a página fechar ou recarregar, ao abrir de novo o app volta para o mesmo ponto.
     // Fica livre sair apenas se nada foi contado ainda. (O bloqueio vale neste computador; os dados do app ficam em cada navegador.)
     const INV_AND_KEY = 'tbx_inv_andamento';
+    function ehAdminLogado() { return !!(window.usrEhAdm && usrEhAdm()); }
     let invRestaurado = false, invRestaurando = false, invUltimoSalvo = '';
     function invTrava() { try { return !!inventarioAtual || ppSessoes.some(s => !s.fim); } catch (e) { return !!inventarioAtual; } }
     function invAviso() { alert('Há um inventário em andamento neste depósito.\n\nFinalize o inventário para sair desta tela. Tudo o que foi preenchido está salvo.'); }
@@ -3867,9 +3903,9 @@
           <td class="py-2.5 px-4 font-mono font-semibold text-slate-800">${item.produto}</td>
           <td class="py-2.5 px-4 text-center font-bold ${item.naoContado ? 'text-slate-400 font-normal italic' : ''}">${item.naoContado ? 'Não Contado' : item.quantidade}</td>
           <td class="py-2.5 px-4 text-center">
-            <button onclick="removerContagemItem(${i})" title="Remover" class="text-slate-400 hover:text-tbx-red p-1 transition-colors">
+            ${ehAdminLogado() ? `<button onclick="removerContagemItem(${i})" title="Remover (ADM)" class="text-slate-400 hover:text-tbx-red p-1 transition-colors">
               <i class="fa-solid fa-trash-can"></i>
-            </button>
+            </button>` : '<span class="text-slate-300 text-xs">-</span>'}
           </td>
         </tr>
       `).join('');
@@ -3901,6 +3937,7 @@
     }
 
     function removerContagemItem(index) {
+      if (!ehAdminLogado()) { alert('Só o ADM pode apagar linhas da contagem.'); return; }
       inventarioAtual.contagemFisica.splice(index, 1);
       renderContagemLista();
     }
@@ -4248,6 +4285,7 @@
         deposito: inventarioAtual.deposito,
         dadosSistema: inventarioAtual.dadosSistema,
         tentativas: inventarioAtual.tentativas,
+        ...(inventarioAtual.ajustesSistemaAdm && inventarioAtual.ajustesSistemaAdm.length ? { ajustesSistemaAdm: inventarioAtual.ajustesSistemaAdm } : {}),
         status: statusFinal,
         dataFinal: new Date().toISOString()
       });
@@ -4515,9 +4553,9 @@
           <td class="py-2 px-3 text-center">
             <div class="flex items-center justify-center gap-2">
               <button onclick="toggleNaoContadoSistema(${i})" title="Existe, mas não foi contado" class="text-xs font-semibold px-2 py-1 rounded transition-colors ${row.naoContado ? 'bg-slate-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">NC</button>
-              <button onclick="deleteSistemaRow(${i})" title="Remover linha" class="text-slate-400 hover:text-tbx-red p-1 transition-colors">
+              ${ehAdminLogado() ? `<button onclick="deleteSistemaRow(${i})" title="Remover linha (ADM)" class="text-slate-400 hover:text-tbx-red p-1 transition-colors">
                 <i class="fa-solid fa-trash-can"></i>
-              </button>
+              </button>` : ''}
             </div>
           </td>
         </tr>
@@ -4540,8 +4578,115 @@
     }
 
     function deleteSistemaRow(index) {
+      if (!ehAdminLogado()) { alert('Só o ADM pode apagar linhas.'); return; }
       sistemaData.splice(index, 1);
       renderSistemaTable();
+    }
+
+    // ADM: itens do sistema à mão (antes de começar = dados colados; durante a contagem = dados do inventário em andamento)
+    function invSisAlvo() { return inventarioAtual ? inventarioAtual.dadosSistema : sistemaData; }
+    function invSisNomeResp() { try { const x = JSON.parse(sessionStorage.getItem('tbx_usuario_sessao')); return (x && (x.nome || x.login)) || ''; } catch (e) { return ''; } }
+    function invSisAbrir() {
+      if (!ehAdminLogado()) { alert('Só o ADM pode mexer nos itens do sistema.'); return; }
+      document.getElementById('inv-sis-skus').innerHTML = getCatalogoProdutosAtual().map(p => `<option value="${escHtml(p.sku)}"></option>`).join('');
+      ['inv-sis-sku', 'inv-sis-qtd'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('inv-sis-loc').value = selectedDeposito ? (selectedDeposito.codigo || '') : '';
+      document.getElementById('inv-sis-erro').classList.add('hidden');
+      invSisRender();
+      document.getElementById('modal-inv-sis').classList.remove('hidden');
+      setTimeout(() => document.getElementById('inv-sis-sku').focus(), 30);
+    }
+    function invSisRender() {
+      const lista = invSisAlvo() || [];
+      document.getElementById('inv-sis-tbody').innerHTML = lista.length ? lista.map((r, i) => `<tr class="${r.naoContado ? 'opacity-60' : ''}">
+          <td class="py-2 px-3 text-tbx-navy">${escHtml(r.locacao || '')}</td>
+          <td class="py-2 px-3 font-mono font-semibold">${escHtml(r.produto || '')}</td>
+          <td class="py-2 px-3 text-center font-bold">${escHtml(r.disponivel || '')}${r.naoContado ? ' <span class="text-[10px] font-normal text-slate-400">(não contado)</span>' : ''}</td>
+          <td class="py-2 px-3 text-xs text-slate-500">${r.manualAdm ? `Incluído à mão por ${escHtml(r.manualAdm.por)}` : 'Planilha do sistema'}</td>
+          <td class="py-2 px-3 text-center"><button onclick="invSisApagar(${i})" title="Apagar esta linha" class="text-slate-400 hover:text-tbx-red p-1"><i class="fa-solid fa-trash-can"></i></button></td></tr>`).join('')
+        : '<tr><td colspan="5" class="py-6 text-center text-slate-400 text-sm">Nenhum item do sistema (posição vazia no sistema).</td></tr>';
+    }
+    function invSisLog(acao, r) {
+      if (!inventarioAtual) return;
+      (inventarioAtual.ajustesSistemaAdm = inventarioAtual.ajustesSistemaAdm || []).push({ acao, produto: r.produto, disponivel: r.disponivel, locacao: r.locacao || '', por: invSisNomeResp(), em: new Date().toISOString() });
+    }
+    function invSisDepois() {
+      invSisRender();
+      if (inventarioAtual) { try { invSalvarAndamento(); } catch (e) {} } else renderSistemaTable();
+    }
+    function invSisIncluir() {
+      if (!ehAdminLogado()) return;
+      const erro = document.getElementById('inv-sis-erro');
+      const sku = document.getElementById('inv-sis-sku').value.trim().toUpperCase(), q = document.getElementById('inv-sis-qtd').value.trim(), loc = document.getElementById('inv-sis-loc').value.trim();
+      const cad = getCatalogoProdutosAtual().find(p => p.sku.toUpperCase() === sku), n = Number(q);
+      const lista = invSisAlvo();
+      const msg = !sku ? 'Informe o SKU.' : !cad ? `O SKU ${sku} não está cadastrado (Cadastro de Produtos).` : (q === '' || !Number.isInteger(n) || n < 0) ? 'Informe a quantidade disponível (número inteiro).'
+        : lista.some(r => String(r.produto || '').trim().toUpperCase() === cad.sku.toUpperCase() && String(r.locacao || '').trim().toUpperCase() === loc.toUpperCase()) ? `O SKU ${cad.sku} já está nos dados do sistema${loc ? ' nesta locação' : ''}. Apague a linha antiga antes, se precisar trocar.` : '';
+      if (msg) { erro.innerText = msg; erro.classList.remove('hidden'); return; }
+      erro.classList.add('hidden');
+      const r = { id: '', locacao: loc, produto: cad.sku, disponivel: String(n), bloqueado: '', emAuditoria: '', naoContado: false, manualAdm: { por: invSisNomeResp(), em: new Date().toISOString() } };
+      lista.push(r);
+      invSisLog('incluiu', r);
+      document.getElementById('inv-sis-sku').value = ''; document.getElementById('inv-sis-qtd').value = '';
+      invSisDepois();
+      document.getElementById('inv-sis-sku').focus();
+    }
+    function invSisApagar(i) {
+      if (!ehAdminLogado()) return;
+      const lista = invSisAlvo(), r = lista[i]; if (!r) return;
+      if (!confirm(`Apagar a linha do sistema ${r.produto} (${r.disponivel})${inventarioAtual ? ' deste inventário' : ''}?`)) return;
+      lista.splice(i, 1);
+      invSisLog('apagou', r);
+      invSisDepois();
+    }
+    // Mostra os botões de ADM só para quem é ADM
+    function invAdmBotoes() { const adm = ehAdminLogado(); document.querySelectorAll('.adm-sis-btn').forEach(b => b.classList.toggle('hidden', !adm)); }
+    setInterval(invAdmBotoes, 1500);
+
+    // ADM: apagar inventário já feito. Vai para tbx_inventarios_removidos (cópia de segurança); movimentos e saldos não mudam.
+    let invApagarOpt = null;
+    function invAbrirApagar(opt) {
+      if (!ehAdminLogado()) { alert('Só o ADM pode apagar inventários.'); return; }
+      invApagarOpt = opt || {};
+      invApagarRender();
+      document.getElementById('modal-inv-apagar').classList.remove('hidden');
+    }
+    function invYmdLocal(d) { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; }
+    function invResumoFeito(inv) {
+      const quem = (inv.tentativas && inv.tentativas.map(t => t.colaborador).filter(Boolean)[0]) || inv.colaborador || inv.responsavel || '-';
+      let itens = '-';
+      try { itens = inv.posicoes ? inv.posicoes.length : construirLinhasComparativas(inv.tentativas || [], inv.dadosSistema || [], inv.desconsideradas).length; } catch (e) {}
+      return { quem, itens };
+    }
+    function invApagarRender() {
+      const o = invApagarOpt || {};
+      const lista = inventarios.filter(i => i && !i.soValidacao && i.deposito && i.dataFinal && (!o.deposito || i.deposito.nome === o.deposito) && (!o.dia || invYmdLocal(i.dataFinal) === o.dia))
+        .sort((a, b) => new Date(b.dataFinal) - new Date(a.dataFinal));
+      document.getElementById('inv-apagar-titulo').innerHTML = `<i class="fa-solid fa-trash-can mr-1"></i> Apagar inventário${o.deposito ? ' · ' + escHtml(o.deposito) : ''}${o.dia ? ' · ' + formatDateBR(o.dia + 'T12:00:00') : ''}`;
+      document.getElementById('inv-apagar-tbody').innerHTML = lista.length ? lista.map(inv => {
+        const r = invResumoFeito(inv);
+        return `<tr><td class="py-2 px-3 font-semibold">${escHtml(inv.deposito.nome)} <span class="text-xs text-slate-400">${escHtml(inv.deposito.codigo || '')}</span></td>
+          <td class="py-2 px-3">${formatDateBR(inv.dataFinal)} ${formatHoraBR(inv.dataFinal)}</td>
+          <td class="py-2 px-3">${escHtml(r.quem)}</td>
+          <td class="py-2 px-3 text-center">${r.itens}</td>
+          <td class="py-2 px-3 text-center"><span class="text-[10px] font-bold px-2 py-1 rounded ${inv.status === 'sucesso' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">${escHtml(inv.status || '')}</span></td>
+          <td class="py-2 px-3 text-center"><button onclick="invApagarFeito('${escHtml(inv.id)}')" class="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700">Apagar</button></td></tr>`;
+      }).join('') : '<tr><td colspan="6" class="py-6 text-center text-slate-400 text-sm">Nenhum inventário feito aqui.</td></tr>';
+    }
+    function invApagarFeito(id) {
+      if (!ehAdminLogado()) return;
+      const inv = inventarios.find(i => i.id === id); if (!inv) return;
+      const r = invResumoFeito(inv);
+      if (!confirm(`Apagar o inventário de ${inv.deposito.nome} finalizado em ${formatDateBR(inv.dataFinal)} às ${formatHoraBR(inv.dataFinal)} (contado por ${r.quem}, ${r.itens} item(ns))?\n\nEle some para todos (Visualização, Inventários feitos e indicadores). Itens dele que ainda estão na Validação também saem. Entradas já validadas no saldo não são desfeitas.`)) return;
+      let rem = []; try { rem = JSON.parse(localStorage.getItem('tbx_inventarios_removidos')) || []; } catch (e) {}
+      rem.push(Object.assign({}, inv, { removidoPor: invSisNomeResp(), removidoEm: new Date().toISOString() }));
+      localStorage.setItem('tbx_inventarios_removidos', JSON.stringify(rem));
+      inventarios = inventarios.filter(i => i.id !== id);
+      localStorage.setItem('tbx_inventarios', JSON.stringify(inventarios));
+      invApagarRender();
+      try { if (!document.getElementById('visualizacao-detalhe').classList.contains('hidden') && visualizacaoDepositoAtual) abrirVisualizacaoDeposito(visualizacaoDepositoAtual); } catch (e) {}
+      try { if (window.indRefreshFeitos) indRefreshFeitos(); } catch (e) {}
+      try { renderVisualizacaoLista(); } catch (e) {}
     }
 
     function limparDadosSistema() {
