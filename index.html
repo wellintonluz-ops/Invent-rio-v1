@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-132751">
+  <meta name="tbx-versao" content="20261125-133602">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -2607,6 +2607,7 @@
       function concluir(u) {
         const o = ler(); o[u.login] = Object.assign({}, o[u.login], { nome: u.nome, ultimoAcesso: new Date().toISOString() }); gravar(o);
         sessionStorage.setItem(SESS, JSON.stringify({ login: u.login, nome: u.nome }));
+        try { if (window.muralInicio) muralInicio(); } catch (e) {}   // depois do login a primeira (e única) tela é o Mural
         pendente = null; aplicar(true); ciclo();
       }
 
@@ -10368,6 +10369,13 @@
         try { if (window.NUVEM && NUVEM.varrer) NUVEM.varrer(true); } catch (e) {}
       };
       window.muralNaoLidas = () => { const s = eu(); return s ? naoLidas(s.login).length : 0; };
+      // Logo após o login: abre o Mural na hora (antes de qualquer outra tela aparecer)
+      window.muralInicio = function () {
+        const s = eu(); if (!s) return;
+        sessionStorage.setItem('tbx_mural_abriu', s.login);
+        try { sessionStorage.setItem('tbx_mural_avisadas', JSON.stringify(naoLidas(s.login).map(m => m.id))); } catch (e) {}
+        aba = 'recebidas'; filtroRec = 'nao'; muralAbrir();
+      };
 
       // Abre sozinho ao entrar na plataforma (1 vez por login) e de novo se chegar mensagem nova;
       // nunca no meio de um inventário em andamento.
