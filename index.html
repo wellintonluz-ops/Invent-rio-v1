@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-105413">
+  <meta name="tbx-versao" content="20261125-131511">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -10118,18 +10118,28 @@
         if (overlay) return overlay;
         overlay = document.createElement('div');
         overlay.id = 'mural-overlay';
-        overlay.className = 'hidden fixed inset-0 z-[150] bg-slate-900/60 flex items-start md:items-center justify-center p-3 md:p-6';
-        overlay.onclick = e => { if (e.target === overlay) muralFechar(); };
+        overlay.className = 'hidden fixed inset-0 z-[150] bg-slate-100 flex flex-col';
         overlay.innerHTML = `
-          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="bg-tbx-navy text-white px-5 py-4 flex items-start gap-3">
-              <div class="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center text-amber-300 text-xl shrink-0"><i class="fa-solid fa-comments"></i></div>
-              <div class="flex-1 min-w-0"><p id="mural-saudacao" class="text-lg font-extrabold tracking-wide"></p><p id="mural-resumo" class="text-sm text-slate-300"></p></div>
-              <button onclick="muralFechar()" title="Fechar (Esc)" class="w-9 h-9 rounded-lg hover:bg-white/10 text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+          <div class="bg-tbx-navy text-white shrink-0">
+            <div class="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-10 flex items-start gap-5">
+              <div class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/10 flex items-center justify-center text-amber-300 text-3xl md:text-4xl shrink-0"><i class="fa-solid fa-comments"></i></div>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs md:text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">Mural · Grupo TBX</p>
+                <p id="mural-saudacao" class="text-3xl md:text-5xl font-extrabold tracking-wide mt-1"></p>
+                <p id="mural-resumo" class="text-base md:text-xl text-slate-200 mt-2"></p>
+                <p id="mural-data" class="text-sm text-slate-400 mt-1"></p>
+              </div>
+              <button onclick="muralFechar()" title="Ir para a plataforma (Esc)" class="shrink-0 px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-white text-tbx-navy font-bold text-sm md:text-base hover:bg-slate-100 shadow"><i class="fa-solid fa-arrow-right mr-2"></i>Entrar na plataforma</button>
             </div>
-            <div id="mural-andamento"></div>
-            <div class="flex border-b border-slate-200 px-3 bg-slate-50" id="mural-abas"></div>
-            <div id="mural-corpo" class="flex-1 overflow-auto p-4 bg-slate-50/50"></div>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <div class="max-w-6xl mx-auto px-4 md:px-10 py-6 space-y-5">
+              <div id="mural-andamento" class="rounded-2xl overflow-hidden shadow-sm"></div>
+              <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="flex border-b border-slate-200 px-3 bg-slate-50 overflow-x-auto" id="mural-abas"></div>
+                <div id="mural-corpo" class="p-4 md:p-6 min-h-[40vh]"></div>
+              </div>
+            </div>
           </div>`;
         document.body.appendChild(overlay);
         document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay && !overlay.classList.contains('hidden')) muralFechar(); });
@@ -10140,6 +10150,7 @@
         const nl = naoLidas(s.login), env = enviadas(s.login), lid = lidasMapa();
         const envPend = env.filter(m => m.para.some(l => !lid[m.id + '|' + l])).length;
         $('mural-saudacao').innerText = saudacao().toUpperCase() + ', ' + String(s.login).toUpperCase() + '!';
+        { const d = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }); $('mural-data').innerText = d.charAt(0).toUpperCase() + d.slice(1); }
         $('mural-resumo').innerHTML = nl.length ? `Você possui <b class="text-amber-300">${nl.length} mensage${nl.length === 1 ? 'm' : 'ns'} nova${nl.length === 1 ? '' : 's'}</b> no mural.` : 'Você não possui mensagens novas no mural.';
         const tab = (id, txt, n, cor) => `<button onclick="muralAba('${id}')" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px ${aba === id ? 'border-tbx-navy text-tbx-navy' : 'border-transparent text-slate-500 hover:text-slate-800'}">${txt}${n ? ` <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white ${cor}">${n}</span>` : ''}</button>`;
         $('mural-abas').innerHTML = tab('recebidas', '<i class="fa-solid fa-inbox mr-1.5"></i>Recebidas', nl.length, 'bg-tbx-red')
@@ -10214,10 +10225,10 @@
         const box = $('mural-andamento'); if (!box) return;
         const l = emAndamento();
         const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        box.innerHTML = l.length ? `<div class="bg-amber-50 border-b border-amber-200 px-5 py-3">
-            <p class="text-sm font-bold text-amber-900"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Atenção: ${l.length === 1 ? 'este inventário está' : 'estes inventários estão'} sendo ${l.length === 1 ? 'feito' : 'feitos'} agora — não entre ${l.length === 1 ? 'nele' : 'neles'} até terminar:</p>
-            <ul class="mt-1.5 space-y-1">${l.map(x => `<li class="text-sm text-amber-900"><b>${esc(x.nome)}</b>${x.nome !== x.codigo ? ' <span class="font-mono text-xs">(' + esc(x.codigo) + ')</span>' : ''} — ${esc(x.quem)}, desde ${hora(x.desde)}</li>`).join('')}</ul>
-          </div>` : `<div class="bg-emerald-50 border-b border-emerald-200 px-5 py-2 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-1.5"></i>Nenhum inventário sendo feito agora: todos os depósitos estão livres.</div>`;
+        box.innerHTML = l.length ? `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl px-5 md:px-6 py-4 md:py-5">
+            <p class="text-base md:text-lg font-bold text-amber-900"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Atenção: ${l.length === 1 ? 'este inventário está' : 'estes inventários estão'} sendo ${l.length === 1 ? 'feito' : 'feitos'} agora — não entre ${l.length === 1 ? 'nele' : 'neles'} até terminar:</p>
+            <ul class="mt-2 space-y-1.5">${l.map(x => `<li class="text-sm md:text-base text-amber-900"><i class="fa-solid fa-lock mr-1.5 text-amber-600"></i><b>${esc(x.nome)}</b>${x.nome !== x.codigo ? ' <span class="font-mono text-xs">(' + esc(x.codigo) + ')</span>' : ''} — ${esc(x.quem)}, desde ${hora(x.desde)}</li>`).join('')}</ul>
+          </div>` : `<div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl px-5 md:px-6 py-4 text-sm md:text-base font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-2"></i>Nenhum inventário sendo feito agora: todos os depósitos estão livres.</div>`;
       }
       function atualizarQtdSel() { const q = $('mural-qtd-sel'); if (q) q.innerText = escolhidos.size ? `(${escolhidos.size} selecionado${escolhidos.size > 1 ? 's' : ''})` : '(ninguém selecionado)'; }
       function badge() {
