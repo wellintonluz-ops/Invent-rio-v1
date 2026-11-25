@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-131837">
+  <meta name="tbx-versao" content="20261125-132338">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -10166,7 +10166,7 @@
         if (overlay) return overlay;
         overlay = document.createElement('div');
         overlay.id = 'mural-overlay';
-        overlay.className = 'hidden fixed inset-0 z-[150] bg-slate-100 flex flex-col';
+        overlay.className = 'hidden absolute inset-0 z-[40] bg-slate-100 flex flex-col';
         overlay.innerHTML = `
           <div class="bg-tbx-navy text-white shrink-0">
             <div class="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-10 flex items-start gap-5">
@@ -10177,7 +10177,7 @@
                 <p id="mural-resumo" class="text-base md:text-xl text-slate-200 mt-2"></p>
                 <p id="mural-data" class="text-sm text-slate-400 mt-1"></p>
               </div>
-              <button onclick="muralFechar()" title="Ir para a plataforma (Esc)" class="shrink-0 px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-white text-tbx-navy font-bold text-sm md:text-base hover:bg-slate-100 shadow"><i class="fa-solid fa-arrow-right mr-2"></i>Entrar na plataforma</button>
+              <button onclick="muralFechar()" title="Ir para a plataforma (Esc)" class="shrink-0 px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-white text-tbx-navy font-bold text-sm md:text-base hover:bg-slate-100 shadow"><i class="fa-solid fa-arrow-right mr-2"></i>Ir para a plataforma</button>
             </div>
           </div>
           <div class="flex-1 overflow-auto">
@@ -10189,7 +10189,16 @@
               </div>
             </div>
           </div>`;
-        document.body.appendChild(overlay);
+        // o Mural é uma TELA da plataforma: ocupa a área principal (o menu da esquerda continua à vista)
+        const area = (document.querySelector('header') || {}).parentElement || document.body;
+        if (area !== document.body) area.classList.add('relative');
+        area.appendChild(overlay);
+        // clicar em qualquer item do menu sai do Mural e vai para a tela escolhida
+        if (typeof window.switchTab === 'function' && !window.switchTab.__mural) {
+          const orig = window.switchTab;
+          window.switchTab = function () { muralEsconder(); return orig.apply(this, arguments); };
+          window.switchTab.__mural = true;
+        }
         document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay && !overlay.classList.contains('hidden')) muralFechar(); });
         return overlay;
       }
@@ -10293,11 +10302,13 @@
         const n = s ? naoLidas(s.login).length : 0;
         b.classList.toggle('hidden', !n); b.innerText = n > 99 ? '99+' : String(n);
       }
-      window.muralAbrir = function () { if (!eu()) return; montar().classList.remove('hidden'); aba = naoLidas(eu().login).length || aba !== 'recebidas' ? aba : 'recebidas'; render(); };
+      function navMural(on) { const b = $('nav-mural'); if (!b) return; ['bg-white/10', 'text-white'].forEach(c => b.classList.toggle(c, on)); b.classList.toggle('text-slate-300', !on); }
+      function muralEsconder() { if (overlay) overlay.classList.add('hidden'); navMural(false); }
+      window.muralAbrir = function () { if (!eu()) return; montar().classList.remove('hidden'); navMural(true); render(); };
       window.muralFechar = function () {
         const t = $('mural-texto');
         if (overlay && aba === 'nova' && t && t.value.trim() && !confirm('A mensagem ainda não foi enviada. Fechar mesmo assim?')) return;
-        if (overlay) overlay.classList.add('hidden');
+        muralEsconder();
       };
       window.muralAba = function (a) { aba = a; render(); };
       window.muralFiltro = function (f) { filtroRec = f; render(); };
