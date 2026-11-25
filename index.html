@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-093801">
+  <meta name="tbx-versao" content="20261125-105413">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -374,6 +374,11 @@
 
       <!-- Navigation Links -->
       <nav class="p-4 space-y-1.5">
+        <button onclick="muralAbrir()" id="nav-mural" title="Mural de mensagens" class="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-white/5 hover:text-white transition-all duration-200 relative">
+          <i class="fa-solid fa-comments w-5 h-5 mr-3 flex items-center justify-center text-amber-300"></i>
+          <span class="sidebar-label">Mural</span>
+          <span id="mural-badge" class="hidden absolute left-7 top-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-tbx-red text-white text-[10px] font-bold flex items-center justify-center"></span>
+        </button>
         <button onclick="switchTab('depositos')" id="nav-depositos" class="nav-btn w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 bg-white/10 text-white">
           <i class="fa-solid fa-warehouse w-5 h-5 mr-3 flex items-center justify-center text-tbx-redlight"></i>
           <span class="sidebar-label">Inventário</span>
@@ -10082,6 +10087,206 @@
     try { if (sessionStorage.getItem('tbx_nuvem_auto') === '1') { var o = document.getElementById('nuvem-overlay'); if (o) o.classList.add('hidden'); } } catch (e) {}
     TBXArmazem.pronto.then(function () { TBXArmazem.executarAdiados(); });
   })();
+</script>
+<script>
+    // ===== MURAL: mensagens entre os usuários da plataforma =====
+    // tbx_mural = [{ id, de, deNome, para: [login], paraNomes: {login: nome}, texto, em }]
+    // tbx_mural_lidas = [{ id: msgId + '|' + login, msg, login, em }]  (um registro por leitura: assim duas pessoas lendo ao mesmo tempo não se atrapalham na nuvem)
+    (function () {
+      const K_MSG = 'tbx_mural', K_LID = 'tbx_mural_lidas', ADM_LOGIN = 'murilo.h', ADM_NOME = 'Murilo Henrique Santos Barboza';
+      const $ = id => document.getElementById(id);
+      const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const lerArr = k => { try { const v = JSON.parse(localStorage.getItem(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+      const gravarArr = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+      const eu = () => (window.usrSessao && usrSessao()) || null;
+      const quando = d => { const t = new Date(d); if (isNaN(t)) return ''; const hoje = new Date(); const mesmoDia = t.toDateString() === hoje.toDateString(); return (mesmoDia ? 'hoje' : t.toLocaleDateString('pt-BR')) + ' às ' + t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+      function usuarios() {
+        let cs = []; try { cs = JSON.parse(localStorage.getItem('tbx_colaboradores')) || []; } catch (e) {}
+        const mapa = new Map();
+        mapa.set(ADM_LOGIN, { login: ADM_LOGIN, nome: ADM_NOME, setor: 'ADM' });
+        cs.forEach(c => { const l = window.usrLoginDe ? usrLoginDe(c.nome) : ''; if (l && !mapa.has(l)) mapa.set(l, { login: l, nome: c.nome, setor: c.setor || '' }); });
+        return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      }
+      const lidasMapa = () => { const m = {}; lerArr(K_LID).forEach(r => { if (r && r.msg && r.login) m[r.msg + '|' + r.login] = r.em; }); return m; };
+      function recebidas(login) { return lerArr(K_MSG).filter(m => m && Array.isArray(m.para) && m.para.includes(login)).sort((a, b) => String(b.em).localeCompare(String(a.em))); }
+      function enviadas(login) { return lerArr(K_MSG).filter(m => m && m.de === login).sort((a, b) => String(b.em).localeCompare(String(a.em))); }
+      function naoLidas(login) { const l = lidasMapa(); return recebidas(login).filter(m => !l[m.id + '|' + login]); }
+      function saudacao() { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; }
+
+      let aba = 'recebidas', filtroRec = 'nao', escolhidos = new Set(), overlay = null;
+      function montar() {
+        if (overlay) return overlay;
+        overlay = document.createElement('div');
+        overlay.id = 'mural-overlay';
+        overlay.className = 'hidden fixed inset-0 z-[150] bg-slate-900/60 flex items-start md:items-center justify-center p-3 md:p-6';
+        overlay.onclick = e => { if (e.target === overlay) muralFechar(); };
+        overlay.innerHTML = `
+          <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="bg-tbx-navy text-white px-5 py-4 flex items-start gap-3">
+              <div class="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center text-amber-300 text-xl shrink-0"><i class="fa-solid fa-comments"></i></div>
+              <div class="flex-1 min-w-0"><p id="mural-saudacao" class="text-lg font-extrabold tracking-wide"></p><p id="mural-resumo" class="text-sm text-slate-300"></p></div>
+              <button onclick="muralFechar()" title="Fechar (Esc)" class="w-9 h-9 rounded-lg hover:bg-white/10 text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="mural-andamento"></div>
+            <div class="flex border-b border-slate-200 px-3 bg-slate-50" id="mural-abas"></div>
+            <div id="mural-corpo" class="flex-1 overflow-auto p-4 bg-slate-50/50"></div>
+          </div>`;
+        document.body.appendChild(overlay);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && overlay && !overlay.classList.contains('hidden')) muralFechar(); });
+        return overlay;
+      }
+      function render() {
+        const s = eu(); if (!s || !overlay) return;
+        const nl = naoLidas(s.login), env = enviadas(s.login), lid = lidasMapa();
+        const envPend = env.filter(m => m.para.some(l => !lid[m.id + '|' + l])).length;
+        $('mural-saudacao').innerText = saudacao().toUpperCase() + ', ' + String(s.login).toUpperCase() + '!';
+        $('mural-resumo').innerHTML = nl.length ? `Você possui <b class="text-amber-300">${nl.length} mensage${nl.length === 1 ? 'm' : 'ns'} nova${nl.length === 1 ? '' : 's'}</b> no mural.` : 'Você não possui mensagens novas no mural.';
+        const tab = (id, txt, n, cor) => `<button onclick="muralAba('${id}')" class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px ${aba === id ? 'border-tbx-navy text-tbx-navy' : 'border-transparent text-slate-500 hover:text-slate-800'}">${txt}${n ? ` <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white ${cor}">${n}</span>` : ''}</button>`;
+        $('mural-abas').innerHTML = tab('recebidas', '<i class="fa-solid fa-inbox mr-1.5"></i>Recebidas', nl.length, 'bg-tbx-red')
+          + tab('enviadas', '<i class="fa-solid fa-paper-plane mr-1.5"></i>Enviadas', envPend, 'bg-amber-500')
+          + tab('nova', '<i class="fa-solid fa-pen-to-square mr-1.5"></i>Nova mensagem', 0);
+        andamentoRender();
+        const corpo = $('mural-corpo');
+        if (aba === 'recebidas') {
+          const todas = recebidas(s.login), lista = filtroRec === 'nao' ? nl : todas;
+          const fb = (id, txt) => `<button onclick="muralFiltro('${id}')" class="px-3 py-1 rounded-full text-xs font-semibold border ${filtroRec === id ? 'bg-tbx-navy text-white border-tbx-navy' : 'bg-white text-slate-600 border-slate-300'}">${txt}</button>`;
+          corpo.innerHTML = `<div class="flex items-center gap-2 mb-3">${fb('nao', 'Não lidas (' + nl.length + ')')}${fb('todas', 'Todas (' + todas.length + ')')}</div>`
+            + (lista.length ? lista.map(m => {
+              const lidaEm = lid[m.id + '|' + s.login];
+              return `<div class="bg-white rounded-xl border ${lidaEm ? 'border-slate-200' : 'border-l-4 border-l-tbx-red border-slate-200'} p-4 mb-3 shadow-sm">
+                <div class="flex items-start justify-between gap-3 flex-wrap">
+                  <div><p class="text-sm font-bold text-slate-800"><i class="fa-solid fa-user mr-1 text-slate-400"></i>${esc(m.deNome || m.de)} <span class="font-mono text-xs text-slate-400">(${esc(m.de)})</span></p><p class="text-[11px] text-slate-500">${quando(m.em)}${m.para.length > 1 ? ' · para ' + m.para.length + ' pessoas' : ''}</p></div>
+                  ${lidaEm ? `<span class="text-xs font-semibold text-emerald-700"><i class="fa-solid fa-check-double mr-1"></i>Lida ${quando(lidaEm)}</span>`
+                    : `<button onclick="muralMarcarLida('${esc(m.id)}')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fa-solid fa-check mr-1"></i>Marcar como lida</button>`}
+                </div>
+                <p class="mt-2 text-sm text-slate-700 whitespace-pre-wrap break-words">${esc(m.texto)}</p>
+              </div>`; }).join('')
+            : `<p class="text-center text-sm text-slate-400 italic py-10">${filtroRec === 'nao' ? 'Nenhuma mensagem nova. 🙂' : 'Você ainda não recebeu mensagens.'}</p>`);
+        } else if (aba === 'enviadas') {
+          corpo.innerHTML = env.length ? env.map(m => {
+            const lidos = m.para.filter(l => lid[m.id + '|' + l]).length, todos = lidos === m.para.length;
+            return `<div class="bg-white rounded-xl border border-slate-200 p-4 mb-3 shadow-sm">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <p class="text-[11px] text-slate-500">Enviada ${quando(m.em)}</p>
+                ${todos ? '<span class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-check-double mr-1"></i>Lida por todos</span>' : `<span class="text-xs font-bold text-amber-700"><i class="fa-regular fa-clock mr-1"></i>${lidos} de ${m.para.length} leram</span>`}
+              </div>
+              <p class="mt-1 text-sm text-slate-700 whitespace-pre-wrap break-words">${esc(m.texto)}</p>
+              <div class="mt-3 flex flex-wrap gap-1.5">${m.para.map(l => { const em = lid[m.id + '|' + l], nome = (m.paraNomes && m.paraNomes[l]) || l;
+                return `<span title="${em ? 'Lida ' + quando(em) : 'Ainda não leu'}" class="px-2 py-1 rounded-full text-[11px] font-semibold ${em ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}">${em ? '<i class="fa-solid fa-check-double mr-1"></i>' : '<i class="fa-regular fa-clock mr-1"></i>'}${esc(nome)}${em ? ' · ' + quando(em) : ''}</span>`; }).join('')}</div>
+            </div>`; }).join('')
+            : '<p class="text-center text-sm text-slate-400 italic py-10">Você ainda não enviou mensagens.</p>';
+        } else {
+          const us = usuarios().filter(u => u.login !== s.login);
+          corpo.innerHTML = `
+            <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+              <div>
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                  <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Para quem <span id="mural-qtd-sel" class="normal-case font-normal text-slate-400"></span></label>
+                  <div class="flex gap-2"><button onclick="muralSelTodos(true)" class="text-xs font-semibold text-tbx-navy hover:underline">Marcar todos</button><button onclick="muralSelTodos(false)" class="text-xs font-semibold text-slate-500 hover:underline">Limpar</button></div>
+                </div>
+                <input id="mural-busca" oninput="muralFiltrarUsuarios()" placeholder="Buscar usuário pelo nome ou setor..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-2">
+                <div id="mural-usuarios" class="max-h-56 overflow-auto border border-slate-200 rounded-lg divide-y divide-slate-100">${us.map(u => `
+                  <label data-busca="${esc((u.nome + ' ' + u.setor + ' ' + u.login).toLowerCase())}" class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" value="${esc(u.login)}" ${escolhidos.has(u.login) ? 'checked' : ''} onchange="muralEscolher(this.value, this.checked)">
+                    <span class="font-medium text-slate-800">${esc(u.nome)}</span><span class="text-[11px] text-slate-400">${esc(u.setor)}</span><span class="ml-auto font-mono text-[11px] text-slate-400">${esc(u.login)}</span>
+                  </label>`).join('')}</div>
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Mensagem</label>
+                <textarea id="mural-texto" rows="4" placeholder="Escreva a mensagem..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-1"></textarea>
+              </div>
+              <div class="flex justify-end"><button onclick="muralEnviar()" class="px-5 py-2.5 rounded-lg text-sm font-bold bg-tbx-navy hover:opacity-90 text-white"><i class="fa-solid fa-paper-plane mr-1.5"></i>Enviar</button></div>
+            </div>`;
+          atualizarQtdSel();
+        }
+        badge();
+      }
+      // Inventários sendo feitos agora (trava do depósito na nuvem, renovada a cada 30 s; sem renovação por 30 min = abandonada)
+      function emAndamento() {
+        const tv = (window.NUVEM && NUVEM.travas) || {}, agora = Date.now();
+        let deps = []; try { deps = (typeof depositosCad !== 'undefined' && depositosCad) || JSON.parse(localStorage.getItem('tbx_depositos')) || []; } catch (e) {}
+        return Object.keys(tv).filter(c => !String(c).startsWith('sessao.') && tv[c] && tv[c].ts && agora - tv[c].ts < 30 * 60 * 1000).map(c => {
+          const d = deps.find(x => x && (String(x.codigo || '').toUpperCase() === String(c).toUpperCase() || String(x.sigla || '').toUpperCase() === String(c).toUpperCase()));
+          return { codigo: c, nome: d ? d.nome : c, quem: tv[c].nome || 'outra pessoa', desde: tv[c].desde || tv[c].ts };
+        }).sort((a, b) => a.desde - b.desde);
+      }
+      function andamentoRender() {
+        const box = $('mural-andamento'); if (!box) return;
+        const l = emAndamento();
+        const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        box.innerHTML = l.length ? `<div class="bg-amber-50 border-b border-amber-200 px-5 py-3">
+            <p class="text-sm font-bold text-amber-900"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Atenção: ${l.length === 1 ? 'este inventário está' : 'estes inventários estão'} sendo ${l.length === 1 ? 'feito' : 'feitos'} agora — não entre ${l.length === 1 ? 'nele' : 'neles'} até terminar:</p>
+            <ul class="mt-1.5 space-y-1">${l.map(x => `<li class="text-sm text-amber-900"><b>${esc(x.nome)}</b>${x.nome !== x.codigo ? ' <span class="font-mono text-xs">(' + esc(x.codigo) + ')</span>' : ''} — ${esc(x.quem)}, desde ${hora(x.desde)}</li>`).join('')}</ul>
+          </div>` : `<div class="bg-emerald-50 border-b border-emerald-200 px-5 py-2 text-xs font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-1.5"></i>Nenhum inventário sendo feito agora: todos os depósitos estão livres.</div>`;
+      }
+      function atualizarQtdSel() { const q = $('mural-qtd-sel'); if (q) q.innerText = escolhidos.size ? `(${escolhidos.size} selecionado${escolhidos.size > 1 ? 's' : ''})` : '(ninguém selecionado)'; }
+      function badge() {
+        const s = eu(), b = $('mural-badge'); if (!b) return;
+        const n = s ? naoLidas(s.login).length : 0;
+        b.classList.toggle('hidden', !n); b.innerText = n > 99 ? '99+' : String(n);
+      }
+      window.muralAbrir = function () { if (!eu()) return; montar().classList.remove('hidden'); aba = naoLidas(eu().login).length || aba !== 'recebidas' ? aba : 'recebidas'; render(); };
+      window.muralFechar = function () {
+        const t = $('mural-texto');
+        if (overlay && aba === 'nova' && t && t.value.trim() && !confirm('A mensagem ainda não foi enviada. Fechar mesmo assim?')) return;
+        if (overlay) overlay.classList.add('hidden');
+      };
+      window.muralAba = function (a) { aba = a; render(); };
+      window.muralFiltro = function (f) { filtroRec = f; render(); };
+      window.muralEscolher = function (l, on) { if (on) escolhidos.add(l); else escolhidos.delete(l); atualizarQtdSel(); };
+      window.muralSelTodos = function (on) {
+        document.querySelectorAll('#mural-usuarios label').forEach(lb => { if (lb.style.display === 'none') return; const cb = lb.querySelector('input'); cb.checked = on; if (on) escolhidos.add(cb.value); else escolhidos.delete(cb.value); });
+        atualizarQtdSel();
+      };
+      window.muralFiltrarUsuarios = function () {
+        const q = ($('mural-busca').value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        document.querySelectorAll('#mural-usuarios label').forEach(lb => { lb.style.display = !q || lb.dataset.busca.normalize('NFD').replace(/[̀-ͯ]/g, '').includes(q) ? '' : 'none'; });
+      };
+      window.muralEnviar = function () {
+        const s = eu(); if (!s) return;
+        const texto = ($('mural-texto').value || '').trim();
+        if (!escolhidos.size) { alert('Escolha pelo menos um usuário para receber a mensagem.'); return; }
+        if (!texto) { alert('Escreva a mensagem.'); $('mural-texto').focus(); return; }
+        const us = new Map(usuarios().map(u => [u.login, u.nome]));
+        const para = [...escolhidos], paraNomes = {}; para.forEach(l => { paraNomes[l] = us.get(l) || l; });
+        const arr = lerArr(K_MSG);
+        arr.push({ id: 'mur_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7), de: s.login, deNome: s.nome || s.login, para, paraNomes, texto, em: new Date().toISOString() });
+        gravarArr(K_MSG, arr);
+        escolhidos = new Set(); aba = 'enviadas'; render();
+        try { if (window.NUVEM && NUVEM.varrer) NUVEM.varrer(true); } catch (e) {}
+      };
+      window.muralMarcarLida = function (id) {
+        const s = eu(); if (!s) return;
+        const arr = lerArr(K_LID), chave = id + '|' + s.login;
+        if (!arr.some(r => r && r.id === chave)) { arr.push({ id: chave, msg: id, login: s.login, em: new Date().toISOString() }); gravarArr(K_LID, arr); }
+        render();
+        try { if (window.NUVEM && NUVEM.varrer) NUVEM.varrer(true); } catch (e) {}
+      };
+      window.muralNaoLidas = () => { const s = eu(); return s ? naoLidas(s.login).length : 0; };
+
+      // Abre sozinho ao entrar na plataforma (1 vez por login) e de novo se chegar mensagem nova;
+      // nunca no meio de um inventário em andamento.
+      function vigiar() {
+        badge();
+        if (overlay && !overlay.classList.contains('hidden')) andamentoRender();
+        const s = eu(); if (!s) return;
+        const n = $('nuvem-overlay'), u = $('usr-overlay');
+        if ((n && !n.classList.contains('hidden')) || (u && !u.classList.contains('hidden'))) return;
+        let ocupado = false; try { ocupado = typeof invTrava === 'function' && invTrava(); } catch (e) {}
+        try { document.querySelectorAll('iframe').forEach(f => { if (f.contentWindow && f.contentWindow.invFaseAtual > 0) ocupado = true; }); } catch (e) {}
+        if (ocupado) return;
+        let avisadas = []; try { avisadas = JSON.parse(sessionStorage.getItem('tbx_mural_avisadas') || '[]'); } catch (e) {}
+        const jaAbriu = sessionStorage.getItem('tbx_mural_abriu') === s.login;
+        const novas = naoLidas(s.login).map(m => m.id).filter(id => !avisadas.includes(id));
+        if (!jaAbriu || novas.length) {
+          sessionStorage.setItem('tbx_mural_abriu', s.login);
+          sessionStorage.setItem('tbx_mural_avisadas', JSON.stringify(avisadas.concat(novas).slice(-500)));
+          if (overlay && !overlay.classList.contains('hidden')) { render(); return; }
+          aba = 'recebidas'; filtroRec = 'nao'; muralAbrir();
+        }
+      }
+      setInterval(vigiar, 1500);
+    })();
 </script>
 </body>
 </html>
