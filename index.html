@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-134057">
+  <meta name="tbx-versao" content="20261125-135713">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -580,6 +580,12 @@
           <div class="bg-white p-6 rounded-xl border border-blue-100 shadow-sm max-w-6xl mx-auto">
             <h2 id="deposito-inventario-titulo" class="text-lg font-bold text-slate-800 mb-1">Inventário</h2>
             <p class="text-sm text-slate-500 mb-4">Suba aqui o arquivo exportado do sistema (Produto e Disponível). Cada inventário usa um arquivo novo.</p>
+            <!-- Só ADM: lançar um inventário antigo (muda só a data em que ele fica registrado) -->
+            <div class="so-adm hidden mb-4 p-3 rounded-lg border border-violet-200 bg-violet-50 flex items-center gap-3 flex-wrap">
+              <span class="text-xs font-bold text-violet-900 uppercase tracking-wide"><i class="fa-solid fa-calendar-days mr-1"></i>ADM · Data do inventário</span>
+              <input type="date" id="inv-data-lancamento" onchange="invDataLancamentoMudou()" class="border border-violet-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+              <span id="inv-data-lancamento-info" class="text-xs text-violet-800">Hoje (normal). Para lançar um inventário antigo, escolha a data em que ele foi feito.</span>
+            </div>
 
             <!-- Arquivo do sistema (estado vazio): .csv ou .xlsx exportado do sistema -->
             <input type="file" id="deposito-arquivo" accept=".csv,.xlsx,.xls,.txt" class="hidden" onchange="sisArquivoEscolhido(this.files && this.files[0]); this.value = ''">
@@ -3942,6 +3948,7 @@
       document.getElementById('deposito-inventario').classList.remove('hidden');
       document.getElementById('page-title').innerText = `Inventário - ${selectedDeposito.nome}`;
       document.getElementById('deposito-inventario-titulo').innerText = `Inventário - ${selectedDeposito.nome} (${selectedDeposito.codigo})`;
+      invDataLancamentoReset();
       sistemaData = []; sisArquivoNome = '';
       renderSistemaTable();
     }
@@ -4001,6 +4008,32 @@
       return `<tr class="bg-amber-50"><td colspan="20" class="py-2.5 px-3 text-xs text-amber-900 border-y border-amber-200"><i class="fa-solid fa-hourglass-half mr-1.5"></i><b>Pendente ADM — produto sem cadastro:</b> ${escHtml((inv.pendenteCadastro || []).join(', '))}. Este inventário (${formatDateBR(inv.dataFinal)} ${formatHoraBR(inv.dataFinal)}) não conta no indicador e não vai para a validação até o ADM cadastrar.</td></tr>`;
     }
 
+    // ===== ADM: LANÇAR INVENTÁRIO ANTIGO =====
+    // Muda só a data: o inventário é feito normalmente e fica registrado no dia escolhido (mantendo os horários).
+    const invHojeYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    function invDataLancamentoReset() {
+      const el = document.getElementById('inv-data-lancamento'); if (!el) return;
+      el.value = invHojeYmd(); el.max = invHojeYmd(); invDataLancamentoMudou();
+    }
+    function invDataLancamento() {
+      const el = document.getElementById('inv-data-lancamento');
+      if (!el || !(window.usrEhAdm && usrEhAdm())) return '';
+      const v = el.value; return v && v < invHojeYmd() ? v : '';
+    }
+    function invDataLancamentoMudou() {
+      const el = document.getElementById('inv-data-lancamento'), info = document.getElementById('inv-data-lancamento-info'); if (!el || !info) return;
+      if (el.value > invHojeYmd()) { el.value = invHojeYmd(); alert('A data não pode ser no futuro.'); }
+      const v = invDataLancamento();
+      info.innerHTML = v ? `<b>Inventário antigo:</b> vai ficar registrado em <b>${v.split('-').reverse().join('/')}</b> (os horários continuam os de agora).` : 'Hoje (normal). Para lançar um inventário antigo, escolha a data em que ele foi feito.';
+      el.classList.toggle('ring-2', !!v); el.classList.toggle('ring-violet-400', !!v);
+    }
+    // Troca o dia de uma data ISO mantendo a hora local
+    function invNoDia(iso, ymd) {
+      const d = new Date(iso); if (isNaN(d) || !ymd) return iso;
+      const [a, m, dd] = ymd.split('-').map(Number);
+      return new Date(a, m - 1, dd, d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()).toISOString();
+    }
+
     async function iniciarContagemFisica(pendCad) {
       if (!(await depLockAdquirir(selectedDeposito.codigo))) return;
       inventarioAtual = {
@@ -4008,6 +4041,7 @@
         dadosSistema: JSON.parse(JSON.stringify(sistemaData)),
         sistemaArquivo: sisArquivoNome || '',
         ...(pendCad && pendCad.length ? { pendenteCadastro: pendCad.slice() } : {}),
+        ...(invDataLancamento() ? { dataLancamento: invDataLancamento() } : {}),
         tentativas: [],
         contagemFisica: [],
         colaboradorAtual: selectedDeposito.colaborador,
@@ -4577,15 +4611,22 @@
 
     function finalizarInventario(statusFinal) {
       const pend = invSkusSemCadastro(invPendCad());
+      const retro = inventarioAtual.dataLancamento || '';   // ADM lançando inventário antigo: tudo fica no dia escolhido
+      const agoraIso = new Date().toISOString();
+      if (retro) (inventarioAtual.tentativas || []).forEach(t => {
+        ['dataInicio', 'dataFim'].forEach(k => { if (t[k]) t[k] = invNoDia(t[k], retro); });
+        (t.contagemFisica || []).forEach(c => { if (c.hora) c.hora = invNoDia(c.hora, retro); });
+      });
       inventarios.unshift({
         id: Date.now().toString(),
         deposito: inventarioAtual.deposito,
         dadosSistema: inventarioAtual.dadosSistema,
         tentativas: inventarioAtual.tentativas,
+        ...(retro ? { lancamentoAntigo: { data: retro, lancadoEm: agoraIso, por: (window.usrSessao && usrSessao() || {}).login || '' } } : {}),
         ...(inventarioAtual.ajustesSistemaAdm && inventarioAtual.ajustesSistemaAdm.length ? { ajustesSistemaAdm: inventarioAtual.ajustesSistemaAdm } : {}),
         ...(inventarioAtual.sistemaArquivo ? { sistemaArquivo: inventarioAtual.sistemaArquivo } : {}),
         ...(pend.length ? { status: 'pendente-cadastro', statusOriginal: statusFinal, pendenteCadastro: pend } : { status: statusFinal }),
-        dataFinal: new Date().toISOString()
+        dataFinal: retro ? invNoDia(agoraIso, retro) : agoraIso
       });
       if (pend.length) setTimeout(() => alert(`Inventário registrado, mas ficou PENDENTE para o ADM.\n\nProduto(s) sem cadastro: ${pend.join(', ')}.\n\nEle não conta no indicador${statusFinal === 'divergente' ? ' e não vai para a validação' : ''} até o ADM cadastrar.`), 300);
       localStorage.setItem('tbx_inventarios', JSON.stringify(inventarios));
