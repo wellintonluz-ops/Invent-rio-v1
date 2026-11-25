@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-133602">
+  <meta name="tbx-versao" content="20261125-134057">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -3252,12 +3252,13 @@
       // assim cada texto fica centralizado na célula, igual ao print.
       let indUltTabela = null;
       function indDesenharTabela(T) {
-        const S = 2, M = 14, P = 8;
+        const M = 14, P = 8, LARG_EMAIL = 1674;   // mesma largura (em pixels) dos prints que já iam no e-mail
         const cw = [56]; T.deps.forEach(() => cw.push(50, 56, 50, 60));
         const tabW = cw.reduce((a, b) => a + b, 0), hTit = 58, gap = 7, hDep = 76, hSub = 34, hRow = 42;
         const tabH = hDep + hSub + hRow * T.linhas.length;
         const W = 2 * M + 4 + 2 * P + tabW, H = 2 * M + 4 + 2 * P + hTit + gap + tabH;
-        const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+        const S = Math.min(LARG_EMAIL / W, 1.05);   // com os 7 depósitos a imagem fica com 1674 px de largura, como o print de sempre (com menos depósitos, fica mais estreita, no mesmo tamanho de letra)
+        const cv = document.createElement('canvas'); cv.width = Math.round(W * S); cv.height = Math.round(H * S);
         const g = cv.getContext('2d'); g.scale(S, S);
         const fonteT = 'Calibri, Carlito, Arial, sans-serif';
         const ret = (x, y, w, h, cor) => { g.fillStyle = cor; g.fillRect(x, y, w, h); };
@@ -3294,7 +3295,7 @@
           const t = borda || grupo ? 2 : 1;
           if (borda || grupo || n === 1) vl(x, ty, tabH, t); else vl(x, ys[1], tabH - hDep, t);   // na 1ª linha só as divisões dos depósitos
         });
-        return { cv, larg: W };
+        return { cv, larg: cv.width };
       }
       async function indImagemTabela() {
         if (!indUltTabela) throw new Error('tabela não encontrada');
