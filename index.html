@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-132338">
+  <meta name="tbx-versao" content="20261125-132751">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -468,9 +468,9 @@
         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
       </div>
       <p class="sidebar-label text-[11px] text-slate-500">© Grupo TBX - Gestão TI</p>
-      <div id="usr-bloco" class="sidebar-label hidden mt-1 flex items-center justify-between gap-2"><span id="usr-nome" class="truncate text-[11px] text-emerald-300"></span><button onclick="usrSair()" class="text-[11px] underline text-slate-400 hover:text-white shrink-0">Trocar usuário</button></div>
+      <div id="usr-bloco" class="sidebar-label hidden mt-1 flex items-center justify-between gap-2"><span id="usr-nome" class="truncate text-[11px] text-emerald-300"></span><button onclick="usrTrocar()" class="text-[11px] font-semibold px-2 py-1 rounded bg-white/10 text-white hover:bg-white/20 shrink-0">Trocar usuário</button></div>
       <p id="nuvem-status" class="sidebar-label text-[11px] text-slate-400 mt-1">Nuvem: conectando...</p>
-      <div id="nuvem-bloco" class="sidebar-label hidden mt-1 flex items-center justify-between gap-2"><span id="nuvem-usuario" class="truncate text-[11px] text-slate-300"></span><button id="nuvem-btn-sair" class="text-[11px] underline text-slate-400 hover:text-white shrink-0">Sair</button></div>
+      <div id="nuvem-bloco" class="sidebar-label hidden mt-1 flex items-center justify-between gap-2"><span id="nuvem-usuario" class="truncate text-[11px] text-slate-300"></span><button id="nuvem-btn-sair" class="hidden">Sair</button></div>
     </div>
     </div>
   </aside>
@@ -483,6 +483,15 @@
       <div class="flex items-center space-x-3">
         <button id="btn-menu-toggle" onclick="alternarMenuLateral()" title="Recolher / mostrar o menu" class="md:hidden w-9 h-9 rounded-lg border border-blue-100 text-tbx-navy hover:bg-blue-50 flex items-center justify-center transition-colors"><i class="fa-solid fa-bars"></i></button>
         <h1 id="page-title" class="text-xl font-bold text-slate-800">Inventário</h1>
+      </div>
+      <div class="flex items-center gap-3">
+      <!-- USUÁRIO LOGADO + Sair / Trocar usuário (bem à vista) -->
+      <div id="hdr-usuario" class="hidden order-2 flex items-center gap-3">
+        <div class="hidden sm:flex items-center gap-2.5">
+          <div id="hdr-usr-ini" class="w-9 h-9 rounded-full bg-tbx-navy text-white flex items-center justify-center text-sm font-bold"></div>
+          <div class="leading-tight text-right"><p id="hdr-usr-nome" class="text-sm font-bold text-slate-800 max-w-[220px] truncate"></p><p id="hdr-usr-login" class="text-[11px] font-mono text-slate-500"></p></div>
+        </div>
+        <button onclick="usrTrocar()" title="Sair deste usuário e entrar com outro" class=" inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-tbx-red hover:opacity-90 text-white text-sm font-bold shadow-sm"><i class="fa-solid fa-right-from-bracket"></i>Sair / Trocar usuário</button>
       </div>
       <!-- CALCULADORA: botão fixo no cabeçalho, só durante um inventário em andamento -->
       <div id="calc-wrap" class="hidden relative">
@@ -502,6 +511,7 @@
           <button id="calc-usar" type="button" onclick="calcUsar()" class="w-full mt-2 bg-tbx-navy hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-arrow-turn-down mr-1"></i> Usar na quantidade</button>
           <p class="text-[10px] text-slate-400 mt-1.5 text-center">Dá para digitar no teclado: números, + − * / ( ), Enter = e Esc fecha.</p>
         </div>
+      </div>
       </div>
     </header>
 
@@ -2607,6 +2617,11 @@
         document.querySelectorAll('.so-adm').forEach(e => e.classList.toggle('hidden', !(s ? ehAdm(s.login) : location.hash === '#nuvem-teste')));   // botões só do ADM
         const b = $('usr-bloco'); if (b) b.classList.toggle('hidden', !s);
         if (s && $('usr-nome')) $('usr-nome').innerText = s.nome + ' (' + s.login + ')';
+        const hu = $('hdr-usuario'); if (hu) hu.classList.toggle('hidden', !s);
+        if (s && $('hdr-usr-nome')) {
+          $('hdr-usr-nome').innerText = s.nome || s.login; $('hdr-usr-login').innerText = s.login;
+          $('hdr-usr-ini').innerText = String(s.nome || s.login).trim().split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+        }
         if (!s) return;
         const sig = JSON.stringify([ehAdm(s.login), (ler()[s.login] || {}).telas || {}, (ler()[s.login] || {}).treino === true, (ler()[s.login] || {}).indicadores === true]);
         if (!forcar && sig === assinatura) return;
@@ -2616,6 +2631,14 @@
         const idAberta = aberta ? aberta.id.slice(4) : null;
         if (idAberta && idAberta !== 'depositos' && !idAberta.startsWith('dc-') && !usrPode(idAberta)) { try { switchTab('depositos'); } catch (e) {} }
       }
+      // Botão grande: confirma antes (e não deixa sair no meio de um inventário em andamento)
+      window.usrTrocar = () => {
+        let ocupado = false; try { ocupado = typeof invTrava === 'function' && invTrava(); } catch (e) {}
+        if (ocupado) { alert('Há um inventário em andamento nesta tela. Finalize (ou cancele) o inventário antes de trocar de usuário.'); return; }
+        const s = sessao();
+        if (!confirm(`Sair do usuário ${s ? s.login : ''} e entrar com outro?`)) return;
+        usrSair();
+      };
       window.usrSair = async () => {
         try { if (window.tbxSessaoLiberar) await Promise.race([tbxSessaoLiberar(), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
         sessionStorage.removeItem(SESS); location.reload();
@@ -10177,7 +10200,10 @@
                 <p id="mural-resumo" class="text-base md:text-xl text-slate-200 mt-2"></p>
                 <p id="mural-data" class="text-sm text-slate-400 mt-1"></p>
               </div>
-              <button onclick="muralFechar()" title="Ir para a plataforma (Esc)" class="shrink-0 px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-white text-tbx-navy font-bold text-sm md:text-base hover:bg-slate-100 shadow"><i class="fa-solid fa-arrow-right mr-2"></i>Ir para a plataforma</button>
+              <div class="shrink-0 flex flex-col sm:flex-row gap-2">
+                <button onclick="muralFechar()" title="Ir para a plataforma (Esc)" class="px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-white text-tbx-navy font-bold text-sm md:text-base hover:bg-slate-100 shadow"><i class="fa-solid fa-arrow-right mr-2"></i>Ir para a plataforma</button>
+                <button onclick="usrTrocar()" title="Sair deste usuário e entrar com outro" class="px-4 md:px-5 py-2.5 md:py-3 rounded-xl bg-tbx-red text-white font-bold text-sm md:text-base hover:opacity-90 shadow"><i class="fa-solid fa-right-from-bracket mr-2"></i>Sair / Trocar usuário</button>
+              </div>
             </div>
           </div>
           <div class="flex-1 overflow-auto">
