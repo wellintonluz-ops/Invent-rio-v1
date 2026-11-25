@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261125-131511">
+  <meta name="tbx-versao" content="20261125-131837">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -615,8 +615,8 @@
                 </button>
               </div>
 
-              <div id="deposito-dados-erro" class="hidden mt-3 p-2.5 bg-rose-50 border border-rose-100 rounded-lg text-xs text-rose-700 font-medium">
-                Há produtos não cadastrados (destacados em vermelho). Corrija o código ou cadastre-os em Cadastro → Cadastro de Produtos antes de continuar.
+              <div id="deposito-dados-erro" class="hidden mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>Há produtos <b>sem cadastro</b> (em vermelho). Você pode seguir com o inventário: ele fica registrado, mas fica <b>PENDENTE para o ADM</b> — não conta no indicador e não vai para a validação até o ADM cadastrar o(s) produto(s).
               </div>
 
               <div class="flex justify-end mt-5 pt-4 border-t border-blue-50">
@@ -782,7 +782,11 @@
                   <ul id="contagem-sku-sugestoes" class="hidden"></ul>
                 </div>
                 <div id="contagem-sku-erro" class="hidden mt-2 p-2.5 bg-rose-50 border border-rose-100 rounded-lg text-xs text-rose-700 font-medium">
-                  Este item não está cadastrado. Verifique o SKU ou cadastre-o em Cadastro → Cadastro de Produtos.
+                  Este item não está cadastrado. Verifique o SKU digitado.
+                  <div class="mt-2 pt-2 border-t border-rose-100 flex items-center justify-between gap-2 flex-wrap">
+                    <span class="text-rose-800">O SKU está certo e o produto existe no físico?</span>
+                    <button onclick="contagemRegistrarSemCadastro()" class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold"><i class="fa-solid fa-hourglass-half mr-1"></i>Registrar mesmo assim (pendente ADM)</button>
+                  </div>
                 </div>
 
                 <div id="contagem-posicao-vazia-wrap" class="hidden mt-4 pt-4 border-t border-blue-50 flex items-center justify-between">
@@ -2963,6 +2967,7 @@
         if (corte && man.dados) deps.forEach(d => { const v = man.dados[d.sigla]; if (Array.isArray(v)) v.forEach((x, m) => { if (m < 12 && Array.isArray(x)) { r[d.sigla][m].erro += Number(x[0]) || 0; r[d.sigla][m].acerto += Number(x[1]) || 0; } }); });
         inventarios.forEach(i => {
           if (!i || i.soValidacao || !i.dataFinal || !i.deposito) return;
+          if (i.status === 'pendente-cadastro') return;   // produto sem cadastro: só conta depois que o ADM cadastrar
           const dt = new Date(i.dataFinal); if (isNaN(dt) || dt.getFullYear() !== ano) return;
           if (corte && indYmdL(dt) <= corte) return;   // até a data de corte valem os números lançados à mão
           if (indYmdL(dt) >= hoje) return;
@@ -3936,19 +3941,48 @@
     function irParaValidarFisico() {
       if (!sistemaData || sistemaData.length === 0) return;
 
-      const catalogo = getCatalogoProdutosAtual();
-      const temNaoCadastrado = sistemaData.some(row => !catalogo.some(p => p.sku.toUpperCase() === (row.produto || '').trim().toUpperCase()));
-      if (temNaoCadastrado) return;
-
-      iniciarContagemFisica();
+      const naoCad = invSkusSemCadastro(sistemaData.map(r => r.produto));
+      if (naoCad.length && !confirm(`${naoCad.length === 1 ? 'Este produto não tem' : 'Estes produtos não têm'} cadastro: ${naoCad.join(', ')}.\n\nVocê pode seguir com o inventário normalmente. Ele fica registrado, mas fica PENDENTE para o ADM:\n• não conta no indicador (nem acerto nem erro);\n• se der divergência, não vai para a validação;\naté o ADM cadastrar ${naoCad.length === 1 ? 'o produto' : 'os produtos'}.\n\nSeguir?`)) return;
+      iniciarContagemFisica(naoCad);
     }
 
-    async function iniciarContagemFisica() {
+    // ===== INVENTÁRIO PENDENTE DE CADASTRO =====
+    // Produto sem cadastro no inventário: o inventário é feito e registrado normalmente, mas fica com status 'pendente-cadastro'
+    // (fora do indicador e da validação) até o ADM cadastrar o(s) SKU(s); aí volta sozinho para o status que teria (sucesso / divergente).
+    function invSkusSemCadastro(skus) {
+      const cat = new Set(getCatalogoProdutosAtual().map(p => String(p.sku).trim().toUpperCase()));
+      return [...new Set((skus || []).map(x => String(x || '').trim().toUpperCase()).filter(x => x && !cat.has(x)))];
+    }
+    const invPendCad = () => (inventarioAtual && Array.isArray(inventarioAtual.pendenteCadastro)) ? inventarioAtual.pendenteCadastro : [];
+    function invResolverPendentesCadastro() {
+      let mudou = 0;
+      (inventarios || []).forEach(inv => {
+        if (!inv || inv.status !== 'pendente-cadastro') return;
+        const falta = invSkusSemCadastro(inv.pendenteCadastro || []);
+        if (falta.length) { if (falta.length !== (inv.pendenteCadastro || []).length) { inv.pendenteCadastro = falta; mudou++; } return; }
+        inv.status = inv.statusOriginal || 'divergente';
+        inv.cadastroResolvidoEm = new Date().toISOString();
+        delete inv.statusOriginal; delete inv.pendenteCadastro;
+        mudou++;
+      });
+      if (mudou) { localStorage.setItem('tbx_inventarios', JSON.stringify(inventarios)); try { if (typeof renderVisualizacaoInventario === 'function') renderVisualizacaoInventario(); } catch (e) {} }
+      return mudou;
+    }
+    window.invPendentesCadastro = () => (inventarios || []).filter(i => i && i.status === 'pendente-cadastro');
+    window.invResolverPendentesCadastro = invResolverPendentesCadastro;
+    setTimeout(() => { try { invResolverPendentesCadastro(); } catch (e) {} }, 4000);
+    setInterval(() => { try { invResolverPendentesCadastro(); } catch (e) {} }, 60000);
+    function htmlPendenteCadastro(inv) {
+      return `<tr class="bg-amber-50"><td colspan="20" class="py-2.5 px-3 text-xs text-amber-900 border-y border-amber-200"><i class="fa-solid fa-hourglass-half mr-1.5"></i><b>Pendente ADM — produto sem cadastro:</b> ${escHtml((inv.pendenteCadastro || []).join(', '))}. Este inventário (${formatDateBR(inv.dataFinal)} ${formatHoraBR(inv.dataFinal)}) não conta no indicador e não vai para a validação até o ADM cadastrar.</td></tr>`;
+    }
+
+    async function iniciarContagemFisica(pendCad) {
       if (!(await depLockAdquirir(selectedDeposito.codigo))) return;
       inventarioAtual = {
         deposito: { nome: selectedDeposito.nome, codigo: selectedDeposito.codigo },
         dadosSistema: JSON.parse(JSON.stringify(sistemaData)),
         sistemaArquivo: sisArquivoNome || '',
+        ...(pendCad && pendCad.length ? { pendenteCadastro: pendCad.slice() } : {}),
         tentativas: [],
         contagemFisica: [],
         colaboradorAtual: selectedDeposito.colaborador,
@@ -4004,6 +4038,7 @@
         selecionarSkuContagem(exato.sku);
         return;
       }
+      if (invPendCad().includes(query)) { selecionarSkuContagem(query); return; }   // produto sem cadastro já pendente neste inventário
 
       const matches = catalogo.filter(p => p.sku.toUpperCase().startsWith(query));
       if (matches.length === 1) {
@@ -4024,13 +4059,23 @@
       document.getElementById('contagem-sku-erro').classList.remove('hidden');
     }
 
+    function contagemRegistrarSemCadastro() {
+      const sku = (document.getElementById('contagem-sku-input').value || '').trim().toUpperCase();
+      if (!sku || !inventarioAtual) return;
+      if (!confirm(`Registrar o SKU ${sku} SEM CADASTRO?\n\nO inventário continua normalmente, mas fica PENDENTE para o ADM (fora do indicador e da validação) até o ADM cadastrar este produto.\n\nConfira se o código está certo antes.`)) return;
+      if (!Array.isArray(inventarioAtual.pendenteCadastro)) inventarioAtual.pendenteCadastro = [];
+      if (!inventarioAtual.pendenteCadastro.includes(sku)) inventarioAtual.pendenteCadastro.push(sku);
+      selecionarSkuContagem(sku);
+    }
+
     function hideContagemSkuErro() {
       document.getElementById('contagem-sku-erro').classList.add('hidden');
     }
 
     function selecionarSkuContagem(sku) {
       // Produto precisa existir no Cadastro de Produtos — não deixa registrar algo não cadastrado.
-      const cadastrado = getCatalogoProdutosAtual().find(p => p.sku.toUpperCase() === sku.toUpperCase());
+      let cadastrado = getCatalogoProdutosAtual().find(p => p.sku.toUpperCase() === sku.toUpperCase());
+      if (!cadastrado && invPendCad().includes(String(sku).toUpperCase())) cadastrado = { sku: String(sku).toUpperCase() };   // pendente de cadastro (ADM)
       if (!cadastrado) {
         mostrarContagemSkuErro();
         return;
@@ -4506,15 +4551,18 @@
     }
 
     function finalizarInventario(statusFinal) {
+      const pend = invSkusSemCadastro(invPendCad());
       inventarios.unshift({
         id: Date.now().toString(),
         deposito: inventarioAtual.deposito,
         dadosSistema: inventarioAtual.dadosSistema,
         tentativas: inventarioAtual.tentativas,
         ...(inventarioAtual.ajustesSistemaAdm && inventarioAtual.ajustesSistemaAdm.length ? { ajustesSistemaAdm: inventarioAtual.ajustesSistemaAdm } : {}),
-        status: statusFinal,
+        ...(inventarioAtual.sistemaArquivo ? { sistemaArquivo: inventarioAtual.sistemaArquivo } : {}),
+        ...(pend.length ? { status: 'pendente-cadastro', statusOriginal: statusFinal, pendenteCadastro: pend } : { status: statusFinal }),
         dataFinal: new Date().toISOString()
       });
+      if (pend.length) setTimeout(() => alert(`Inventário registrado, mas ficou PENDENTE para o ADM.\n\nProduto(s) sem cadastro: ${pend.join(', ')}.\n\nEle não conta no indicador${statusFinal === 'divergente' ? ' e não vai para a validação' : ''} até o ADM cadastrar.`), 300);
       localStorage.setItem('tbx_inventarios', JSON.stringify(inventarios));
       setTimeout(depLockTick, 800);   // solta a trava do depósito logo após finalizar
     }
@@ -4786,7 +4834,7 @@
 
       const temNaoCadastrado = sistemaData.some(row => !estaCadastrado(row.produto));
       document.getElementById('deposito-dados-erro').classList.toggle('hidden', !temNaoCadastrado);
-      document.getElementById('deposito-validar-fisico-btn').disabled = temNaoCadastrado;
+      document.getElementById('deposito-validar-fisico-btn').disabled = false;
     }
 
     function updateSistemaCell(index, field, value) {
@@ -6103,11 +6151,11 @@
         tbody.innerHTML = '<tr><td colspan="9" class="py-10 text-center text-slate-400 text-sm">Nenhum inventário finalizado neste depósito ainda.</td></tr>';
         return;
       }
-      tbody.innerHTML = doDeposito.map(inv => {
+      tbody.innerHTML = doDeposito.map(inv => (inv.status === 'pendente-cadastro' ? htmlPendenteCadastro(inv) : '') + (() => {
         if (inv.origem === 'porta-palete' && inv.posicoes) return inv.posicoes.length ? htmlLinhasPortaPalete(inv) : htmlLinhaPosicaoVazia(inv);
         const linhas = construirLinhasComparativas(inv.tentativas, inv.dadosSistema, inv.desconsideradas);
         return linhas.length ? htmlLinhasVisualizacao(linhas, `vis-${inv.id}`, inv) : htmlLinhaPosicaoVazia(inv);
-      }).join('');
+      })()).join('');
       xfIniciar('visualizacao-inventario-tbody');
     }
 
@@ -7270,7 +7318,7 @@
         });
       });
 
-      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico));
+      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico)); try { invResolverPendentesCadastro(); } catch (e) {}
       produtoPreview = [];
       renderProdutoPreview();
       renderProdutoCatalogo();
@@ -7320,7 +7368,7 @@
         custoMedio,
         data: new Date().toISOString()
       });
-      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico));
+      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico)); try { invResolverPendentesCadastro(); } catch (e) {}
 
       skuInput.value = '';
       custoInput.value = '';
@@ -7330,7 +7378,7 @@
 
     function removerProdutoCadastro(sku) {
       produtosHistorico = produtosHistorico.filter(item => item.sku !== sku);
-      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico));
+      localStorage.setItem('tbx_produtos_historico', JSON.stringify(produtosHistorico)); try { invResolverPendentesCadastro(); } catch (e) {}
       renderProdutoCatalogo();
     }
 
@@ -10221,14 +10269,23 @@
           return { codigo: c, nome: d ? d.nome : c, quem: tv[c].nome || 'outra pessoa', desde: tv[c].desde || tv[c].ts };
         }).sort((a, b) => a.desde - b.desde);
       }
+      function pendentesAdmHtml() {
+        if (!(window.usrEhAdm && usrEhAdm()) || !window.invPendentesCadastro) return '';
+        const l = invPendentesCadastro(); if (!l.length) return '';
+        return `<div class="bg-rose-50 border-2 border-rose-300 rounded-2xl px-5 md:px-6 py-4 mb-4">
+            <p class="text-base md:text-lg font-bold text-rose-900"><i class="fa-solid fa-hourglass-half mr-2"></i>ADM: ${l.length} inventário${l.length > 1 ? 's' : ''} pendente${l.length > 1 ? 's' : ''} de cadastro de produto</p>
+            <p class="text-xs text-rose-800 mt-0.5">Cadastre o(s) produto(s) em Cadastro → Cadastro de Produtos: o inventário sai de pendente sozinho e passa a contar (e vai para a validação, se tiver divergência).</p>
+            <ul class="mt-2 space-y-1">${l.map(i => `<li class="text-sm text-rose-900"><b>${esc(i.deposito.nome)}</b> · ${new Date(i.dataFinal).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — sem cadastro: <span class="font-mono font-bold">${esc((i.pendenteCadastro || []).join(', '))}</span></li>`).join('')}</ul>
+          </div>`;
+      }
       function andamentoRender() {
         const box = $('mural-andamento'); if (!box) return;
-        const l = emAndamento();
+        const l = emAndamento(), adm = pendentesAdmHtml();
         const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        box.innerHTML = l.length ? `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl px-5 md:px-6 py-4 md:py-5">
+        box.innerHTML = adm + (l.length ? `<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl px-5 md:px-6 py-4 md:py-5">
             <p class="text-base md:text-lg font-bold text-amber-900"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Atenção: ${l.length === 1 ? 'este inventário está' : 'estes inventários estão'} sendo ${l.length === 1 ? 'feito' : 'feitos'} agora — não entre ${l.length === 1 ? 'nele' : 'neles'} até terminar:</p>
             <ul class="mt-2 space-y-1.5">${l.map(x => `<li class="text-sm md:text-base text-amber-900"><i class="fa-solid fa-lock mr-1.5 text-amber-600"></i><b>${esc(x.nome)}</b>${x.nome !== x.codigo ? ' <span class="font-mono text-xs">(' + esc(x.codigo) + ')</span>' : ''} — ${esc(x.quem)}, desde ${hora(x.desde)}</li>`).join('')}</ul>
-          </div>` : `<div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl px-5 md:px-6 py-4 text-sm md:text-base font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-2"></i>Nenhum inventário sendo feito agora: todos os depósitos estão livres.</div>`;
+          </div>` : `<div class="bg-emerald-50 border-2 border-emerald-200 rounded-2xl px-5 md:px-6 py-4 text-sm md:text-base font-semibold text-emerald-800"><i class="fa-solid fa-circle-check mr-2"></i>Nenhum inventário sendo feito agora: todos os depósitos estão livres.</div>`);
       }
       function atualizarQtdSel() { const q = $('mural-qtd-sel'); if (q) q.innerText = escolhidos.size ? `(${escolhidos.size} selecionado${escolhidos.size > 1 ? 's' : ''})` : '(ninguém selecionado)'; }
       function badge() {
