@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261126-120500">
+  <meta name="tbx-versao" content="20261126-121500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -2786,7 +2786,19 @@
     // sem renovação por 2 min a tela é considerada fechada. Quem entra com um login já aberto escolhe se usa esta tela (a outra é bloqueada).
     (function () {
       const TTL = 2 * 60 * 1000, RENOVAR = 45 * 1000;
-      const abaId = (() => { let id = ''; try { id = sessionStorage.getItem('tbx_aba_id'); if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); sessionStorage.setItem('tbx_aba_id', id); } } catch (e) { id = 'x' + Math.random().toString(36).slice(2); } return id; })();
+      const novoId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      let abaId = (() => { let id = ''; try { id = sessionStorage.getItem('tbx_aba_id'); if (!id) { id = novoId(); sessionStorage.setItem('tbx_aba_id', id); } } catch (e) { id = 'x' + Math.random().toString(36).slice(2); } return id; })();
+      // "Duplicar guia" copia a identidade da tela (e o login) para a guia nova: ela pergunta às outras guias se o número já
+      // está em uso e, se estiver, ganha um número próprio — assim conta como outra tela e cai na regra de uma tela só.
+      let idConferido = false;
+      try {
+        const bc = new BroadcastChannel('tbx_abas');
+        bc.onmessage = e => { const d = e.data || {};
+          if (d.q && d.q === abaId) bc.postMessage({ dup: abaId });
+          else if (d.dup && d.dup === abaId && !idConferido) { abaId = novoId(); try { sessionStorage.setItem('tbx_aba_id', abaId); } catch (x) {} idConferido = true; } };
+        bc.postMessage({ q: abaId });
+        setTimeout(() => { idConferido = true; }, 1500);
+      } catch (e) { idConferido = true; }
       let estado = 'livre', loginAtual = null, ultimo = 0, ocupado = false;   // estado: livre | perguntando | ativo | bloqueado
       const loginSessao = () => { try { const x = JSON.parse(sessionStorage.getItem('tbx_usuario_sessao')); return (x && x.login) || null; } catch (e) { return null; } };
       const nuvemPronta = () => { const n = window.NUVEM, o = document.getElementById('nuvem-overlay'); return !!(n && n.adapter && n.email && o && o.classList.contains('hidden')); };
@@ -2835,7 +2847,7 @@
         estado = 'perguntando';
         mostrar('Login já aberto em outra tela',
           `<p>O login <strong>${esc(loginAtual)}</strong> já está aberto em outra tela ou aparelho (${descLk(lk)}).</p>
-           <p>O mesmo login só pode ficar aberto em <strong>uma tela por vez</strong>. Clique em <strong>OK</strong> para usar esta tela: a outra será bloqueada.</p>
+           <p>O mesmo login só pode ficar aberto em <strong>uma tela por vez</strong>. Clique em <strong>OK</strong> para usar esta tela: a outra tela será <strong>desconectada na hora</strong> (volta para a tela de login).</p>
            <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">Se a outra tela estiver no meio de um inventário, termine lá antes.</p>`,
           [{ txt: 'OK, usar esta tela', primario: true, acao: tomar }, { txt: 'Cancelar e sair', acao: sair }]);
       }
@@ -2844,14 +2856,24 @@
         estado = 'bloqueado';
         try { if (window.TBXArmazem && TBXArmazem.salvarAgora) await TBXArmazem.salvarAgora(); } catch (e) {}
         try { if (window.NUVEM && NUVEM.varrer) NUVEM.varrer(true); } catch (e) {}
-        mostrar('Esta tela foi bloqueada',
-          `<p>O login <strong>${esc(loginAtual)}</strong> foi aberto em outra tela ou aparelho (${esc(lk && lk.nome || 'outra tela')}${lk && lk.ts ? `, às ${hora(lk.ts)}` : ''}).</p>
-           <p>Para não ter dois acessos com o mesmo login ao mesmo tempo, esta tela foi bloqueada. O que você já fez aqui está salvo.</p>`,
-          [{ txt: 'Usar esta tela aqui', primario: true, acao: tomar }, { txt: 'Sair', acao: sair }]);
+        // Regra rígida: esta tela é desconectada de verdade (sai do login e volta para a tela de entrada). Sem opção de continuar aqui.
+        try { sessionStorage.setItem('tbx_sessao_derrubada', JSON.stringify({ login: loginAtual, nome: (lk && lk.nome) || '', ts: (lk && lk.ts) || Date.now() })); } catch (e) {}
+        try { sessionStorage.removeItem('tbx_usuario_sessao'); } catch (e) {}
+        location.reload();
       }
+      // Depois de desconectada: avisa na tela de login por que saiu.
+      (function avisoDerrubada() {
+        let d = null; try { d = JSON.parse(sessionStorage.getItem('tbx_sessao_derrubada')); sessionStorage.removeItem('tbx_sessao_derrubada'); } catch (e) {}
+        if (!d || !d.login) return;
+        const abrir = () => mostrar('Você foi desconectado',
+          `<p>O login <strong>${esc(d.login)}</strong> foi aberto em outra tela ou aparelho (${esc(d.nome || 'outra tela')}${d.ts ? `, às ${hora(d.ts)}` : ''}).</p>
+           <p>O mesmo login só pode ficar aberto em <strong>uma tela por vez</strong>, por isso esta tela foi desconectada. O que você tinha feito aqui ficou salvo.</p>`,
+          [{ txt: 'OK', primario: true, acao: fechar }]);
+        if (document.body) abrir(); else document.addEventListener('DOMContentLoaded', abrir);
+      })();
 
       async function tick() {
-        if (ocupado || location.hash === '#nuvem-teste') return;
+        if (ocupado || !idConferido || location.hash === '#nuvem-teste') return;
         const l = loginSessao();
         if (!l) { if (estado !== 'livre') { estado = 'livre'; fechar(); } loginAtual = null; return; }
         if (l !== loginAtual) { loginAtual = l; estado = 'livre'; }
