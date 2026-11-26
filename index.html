@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261126-171500">
+  <meta name="tbx-versao" content="20261126-171800">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -6158,12 +6158,12 @@
     }
 
     // ===== INVENTÁRIOS DIÁRIOS OBRIGATÓRIOS (por turno) =====
-    // PP.PE, INB.AT, EXP.AT e OP.AT: 4 por dia útil (início e final do 1º turno, início e final do 2º turno).
+    // PP.PE, INB.AT, EXP.AT, OP.AT e o depósito teste (TES.TE): 4 por dia útil (início e final do 1º turno, início e final do 2º turno).
     // REC.AT (horário comercial): 2 por dia (início e final do turno). Booking (BO.AT): 1 por dia.
     // Quem inicia o inventário escolhe qual deles está fazendo. Feriado conta como falta; o dia de hoje nunca conta como falta.
     // Antes de 26/11/2026 valia 1 por dia (qualquer inventário no dia contava). Inventário antigo sem turno marcado ocupa o 1º turno livre do dia.
     const DIARIO_SL4 = [{ id: 'ini1', nome: 'Início do 1º turno' }, { id: 'fim1', nome: 'Final do 1º turno' }, { id: 'ini2', nome: 'Início do 2º turno' }, { id: 'fim2', nome: 'Final do 2º turno' }];
-    const DIARIO_REGRAS = { 'PP.PE': DIARIO_SL4, 'INB.AT': DIARIO_SL4, 'EXP.AT': DIARIO_SL4, 'OP.AT': DIARIO_SL4,
+    const DIARIO_REGRAS = { 'PP.PE': DIARIO_SL4, 'INB.AT': DIARIO_SL4, 'EXP.AT': DIARIO_SL4, 'OP.AT': DIARIO_SL4, 'TES.TE': DIARIO_SL4,
       'REC.AT': [{ id: 'ini', nome: 'Início do turno' }, { id: 'fim', nome: 'Final do turno' }], 'BO.AT': [{ id: 'dia', nome: 'Inventário do dia' }] };
     const DIARIO_TURNOS_DESDE = '2026-11-26';
     const DIARIOS_SIGLAS = Object.keys(DIARIO_REGRAS);
@@ -6177,7 +6177,8 @@
     const diarioSigla = dep => String((dep && dep.sigla) || '').toUpperCase();
     function diarioDeps() { return DIARIOS_SIGLAS.map(sg => (depositosCad || []).find(d => diarioSigla(d) === sg)).filter(Boolean); }
     const diarioEh = dep => !!dep && DIARIOS_SIGLAS.includes(diarioSigla(dep));
-    function diarioSlots(dep, ymd) { const r = DIARIO_REGRAS[diarioSigla(dep)]; if (!r) return []; return ymd < DIARIO_TURNOS_DESDE ? [{ id: 'dia', nome: 'Inventário do dia' }] : r; }
+    const DIARIO_DESDE_DEP = { 'TES.TE': '2026-11-27' };   // depósito que entrou depois na regra: antes disso não é cobrado
+    function diarioSlots(dep, ymd) { const r = DIARIO_REGRAS[diarioSigla(dep)]; if (!r) return []; if (DIARIO_DESDE_DEP[diarioSigla(dep)] && ymd < DIARIO_DESDE_DEP[diarioSigla(dep)]) return []; return ymd < DIARIO_TURNOS_DESDE ? [{ id: 'dia', nome: 'Inventário do dia' }] : r; }
     const diarioSlotNome = (dep, id) => { const r = DIARIO_REGRAS[diarioSigla(dep)] || []; const x = r.find(s => s.id === id); return x ? x.nome : (id === 'extra' ? 'Extra (fora dos turnos)' : ''); };
     // inventários finalizados do depósito, agrupados por dia
     function diarioInvsPorDia(dep) {
