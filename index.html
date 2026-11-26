@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261126-131500">
+  <meta name="tbx-versao" content="20261126-140500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -550,6 +550,7 @@
 
             <div id="deposito-acesso-sucesso" class="hidden">
               <p class="text-sm text-slate-600 mb-1">Bem-vindo, <span id="deposito-acesso-nome-confirmado" class="font-bold text-slate-800"></span>!</p>
+              <div id="deposito-turno-box" class="hidden mb-4 p-3 rounded-xl border border-blue-100 bg-blue-50/40"></div>
               <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4"><i class="fa-solid fa-lock mr-1"></i>Ao clicar em <b>Iniciar Inventário</b>, o resto da plataforma fica travado e não dá para voltar: só sai finalizando o inventário.</p>
               <button onclick="openDepositoInventario()" class="w-full bg-tbx-red hover:bg-rose-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-sm">
                 <i class="fa-solid fa-clipboard-list mr-2"></i> Iniciar Inventário
@@ -3908,7 +3909,8 @@
       document.getElementById('deposito-acesso-sucesso').classList.toggle('hidden', !quem);
       document.getElementById('deposito-acesso-nome-confirmado').innerText = quem;
       if (!quem) return;
-      selectedDeposito.colaborador = quem;
+      selectedDeposito.colaborador = quem; selectedDeposito.turnoSlot = null;
+      diarioTurnoRender();
       const acessos = JSON.parse(localStorage.getItem('tbx_deposito_acessos')) || [];
       acessos.unshift({ id: Date.now().toString(), colaborador: quem, deposito: selectedDeposito.nome, codigo: selectedDeposito.codigo, data: new Date().toISOString() });
       localStorage.setItem('tbx_deposito_acessos', JSON.stringify(acessos));
@@ -3941,9 +3943,11 @@
       if (ppEhPortaPalete(selectedDeposito.nome)) { ppAbrir(); return; }
       if (!selectedDeposito.colaborador) { alert('Não foi possível identificar o seu login. Saia e entre de novo.'); return; }
       if (!restaurando) {
+        const tb = document.getElementById('deposito-turno-box');
+        if (tb && !tb.classList.contains('hidden') && !selectedDeposito.turnoSlot) { alert('Escolha qual inventário do dia você vai fazer (turno) antes de iniciar.'); return; }
         if (!(await depLockAdquirir(selectedDeposito.codigo))) return;
         // A partir daqui o inventário está iniciado: o resto da plataforma trava até finalizar.
-        invPreparo = { deposito: { nome: selectedDeposito.nome, codigo: selectedDeposito.codigo }, colaborador: selectedDeposito.colaborador, inicio: new Date().toISOString() };
+        invPreparo = { deposito: { nome: selectedDeposito.nome, codigo: selectedDeposito.codigo }, colaborador: selectedDeposito.colaborador, turnoSlot: selectedDeposito.turnoSlot || null, inicio: new Date().toISOString() };
       }
       hideAllDepositoScreens();
       document.getElementById('deposito-inventario').classList.remove('hidden');
@@ -4047,6 +4051,7 @@
         tentativas: [],
         contagemFisica: [],
         colaboradorAtual: selectedDeposito.colaborador,
+        ...(selectedDeposito.turnoSlot ? { turnoSlot: selectedDeposito.turnoSlot } : {}),
         dataInicioTentativa: new Date().toISOString()
       };
       invPreparo = null;
@@ -4623,6 +4628,7 @@
         ...(retro ? { lancamentoAntigo: { data: retro, lancadoEm: agoraIso, por: (window.usrSessao && usrSessao() || {}).login || '' } } : {}),
         ...(inventarioAtual.ajustesSistemaAdm && inventarioAtual.ajustesSistemaAdm.length ? { ajustesSistemaAdm: inventarioAtual.ajustesSistemaAdm } : {}),
         ...(inventarioAtual.sistemaArquivo ? { sistemaArquivo: inventarioAtual.sistemaArquivo } : {}),
+        ...(inventarioAtual.turnoSlot ? { turnoSlot: inventarioAtual.turnoSlot } : {}),
         ...(pend.length ? { status: 'pendente-cadastro', statusOriginal: statusFinal, pendenteCadastro: pend } : { status: statusFinal }),
         dataFinal: retro ? invNoDia(agoraIso, retro) : agoraIso
       });
@@ -6151,55 +6157,114 @@
       vdSalvar(); vdSair();
     }
 
-    // ===== INVENTÁRIOS DIÁRIOS OBRIGATÓRIOS =====
-    // PP.PE, REC.AT, INB.AT, EXP.AT, OP.AT e Booking (BO.AT): 1 inventário por dia, de segunda a sexta (feriado conta como falta).
-    // Vale a partir do dia seguinte ao corte da planilha (até lá os números vieram à mão). Qualquer inventário no dia conta como feito.
-    const DIARIOS_SIGLAS = ['PP.PE', 'REC.AT', 'INB.AT', 'EXP.AT', 'OP.AT', 'BO.AT'];
+    // ===== INVENTÁRIOS DIÁRIOS OBRIGATÓRIOS (por turno) =====
+    // PP.PE, INB.AT, EXP.AT e OP.AT: 4 por dia útil (início e final do 1º turno, início e final do 2º turno).
+    // REC.AT (horário comercial): 2 por dia (início e final do turno). Booking (BO.AT): 1 por dia.
+    // Quem inicia o inventário escolhe qual deles está fazendo. Feriado conta como falta; o dia de hoje nunca conta como falta.
+    // Antes de 26/11/2026 valia 1 por dia (qualquer inventário no dia contava). Inventário antigo sem turno marcado ocupa o 1º turno livre do dia.
+    const DIARIO_SL4 = [{ id: 'ini1', nome: 'Início do 1º turno' }, { id: 'fim1', nome: 'Final do 1º turno' }, { id: 'ini2', nome: 'Início do 2º turno' }, { id: 'fim2', nome: 'Final do 2º turno' }];
+    const DIARIO_REGRAS = { 'PP.PE': DIARIO_SL4, 'INB.AT': DIARIO_SL4, 'EXP.AT': DIARIO_SL4, 'OP.AT': DIARIO_SL4,
+      'REC.AT': [{ id: 'ini', nome: 'Início do turno' }, { id: 'fim', nome: 'Final do turno' }], 'BO.AT': [{ id: 'dia', nome: 'Inventário do dia' }] };
+    const DIARIO_TURNOS_DESDE = '2026-11-26';
+    const DIARIOS_SIGLAS = Object.keys(DIARIO_REGRAS);
+    const DIARIO_JUST_KEY = 'tbx_diario_justificativas';
     const diaYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     function diarioInicio() {
       let ate = '2026-11-20';
       try { const m = JSON.parse(localStorage.getItem('tbx_ind_manual')); if (m && m.ate) ate = String(m.ate).slice(0, 10); } catch (e) {}
       const [a, mm, dd] = ate.split('-').map(Number); return diaYmd(new Date(a, mm - 1, dd + 1));
     }
-    function diarioDeps() { return DIARIOS_SIGLAS.map(sg => (depositosCad || []).find(d => String(d.sigla || '').toUpperCase() === sg)).filter(Boolean); }
-    const diarioEh = dep => !!dep && DIARIOS_SIGLAS.includes(String(dep.sigla || '').toUpperCase());
-    function diarioFeitos(dep) {
-      const sg = String(dep.sigla || '').toUpperCase(), feitos = new Set();
+    const diarioSigla = dep => String((dep && dep.sigla) || '').toUpperCase();
+    function diarioDeps() { return DIARIOS_SIGLAS.map(sg => (depositosCad || []).find(d => diarioSigla(d) === sg)).filter(Boolean); }
+    const diarioEh = dep => !!dep && DIARIOS_SIGLAS.includes(diarioSigla(dep));
+    function diarioSlots(dep, ymd) { const r = DIARIO_REGRAS[diarioSigla(dep)]; if (!r) return []; return ymd < DIARIO_TURNOS_DESDE ? [{ id: 'dia', nome: 'Inventário do dia' }] : r; }
+    const diarioSlotNome = (dep, id) => { const r = DIARIO_REGRAS[diarioSigla(dep)] || []; const x = r.find(s => s.id === id); return x ? x.nome : (id === 'extra' ? 'Extra (fora dos turnos)' : ''); };
+    // inventários finalizados do depósito, agrupados por dia
+    function diarioInvsPorDia(dep) {
+      const sg = diarioSigla(dep), m = new Map();
       (inventarios || []).forEach(i => {
         if (!i || i.soValidacao || i.paiId || !i.dataFinal || !i.deposito) return;
         if (String(i.deposito.codigo || '').toUpperCase() !== sg && i.deposito.nome !== dep.nome) return;
-        const d = new Date(i.dataFinal); if (!isNaN(d)) feitos.add(diaYmd(d));
+        const d = new Date(i.dataFinal); if (isNaN(d)) return;
+        const y = diaYmd(d); if (!m.has(y)) m.set(y, []); m.get(y).push(i);
       });
-      return feitos;
+      m.forEach(l => l.sort((a, b) => new Date(a.dataFinal) - new Date(b.dataFinal)));
+      return m;
     }
-    // dias úteis (seg a sex) de "de" até ONTEM sem nenhum inventário do depósito (hoje nunca entra)
+    // quem ocupou cada turno do dia: { slotId: inventário }
+    function diarioOcupacao(dep, ymd, porDia) {
+      const slots = diarioSlots(dep, ymd), invs = ((porDia || diarioInvsPorDia(dep)).get(ymd)) || [], oc = {};
+      invs.forEach(i => { if (i.turnoSlot && slots.some(s => s.id === i.turnoSlot) && !oc[i.turnoSlot]) oc[i.turnoSlot] = i; });
+      invs.filter(i => !i.turnoSlot || !slots.some(s => s.id === i.turnoSlot)).forEach(i => { if (i.turnoSlot === 'extra') return; const livre = slots.find(s => !oc[s.id]); if (livre) oc[livre.id] = i; });
+      return oc;
+    }
+    // turnos que faltaram, dos dias úteis desde o início até ONTEM (hoje nunca entra): [{ dia, slot }]
     function diarioFaltas(dep) {
-      const ini = diarioInicio(), feitos = diarioFeitos(dep), out = [];
+      const ini = diarioInicio(), porDia = diarioInvsPorDia(dep), out = [];
       const [a, m, d] = ini.split('-').map(Number), dia = new Date(a, m - 1, d), hoje = diaYmd(new Date());
       for (let k = 0; k < 400; k++) {
         const y = diaYmd(dia); if (y >= hoje) break;
-        if (dia.getDay() !== 0 && dia.getDay() !== 6 && !feitos.has(y)) out.push(y);
+        if (dia.getDay() !== 0 && dia.getDay() !== 6) { const oc = diarioOcupacao(dep, y, porDia); diarioSlots(dep, y).forEach(s => { if (!oc[s.id]) out.push({ dia: y, slot: s }); }); }
         dia.setDate(dia.getDate() + 1);
       }
       return out;
     }
     function diarioDiaUtilAnterior() { const d = new Date(); d.setDate(d.getDate() - 1); while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1); return diaYmd(d); }
-    // Para o Mural (ADM): como ficou o dia útil anterior em cada depósito diário
+    // Justificativas dos turnos não feitos (opcional): [{ id: 'SIGLA|AAAA-MM-DD|turno', texto, por, em }]
+    function diarioJustLista() { try { return JSON.parse(localStorage.getItem(DIARIO_JUST_KEY)) || []; } catch (e) { return []; } }
+    const diarioJustId = (dep, ymd, slotId) => `${diarioSigla(dep)}|${ymd}|${slotId}`;
+    const diarioJust = id => diarioJustLista().find(x => x.id === id && (x.texto || '').trim());
+    window.diarioJustSalvar = function (id, texto) {
+      if (!(window.usrEhAdm && usrEhAdm())) return;
+      const l = diarioJustLista(), t = String(texto || '').trim(), u = (window.usrSessao && usrSessao()) || {};
+      const k = l.findIndex(x => x.id === id), reg = { id, texto: t, por: u.nome || u.login || '', em: new Date().toISOString() };
+      if (k >= 0) l[k] = reg; else l.push(reg);
+      localStorage.setItem(DIARIO_JUST_KEY, JSON.stringify(l));
+      if (typeof showToast === 'function') showToast(t ? 'Justificativa salva.' : 'Justificativa apagada.', 'success');
+      try { if (visualizacaoDepositoAtual) abrirVisualizacaoDeposito(visualizacaoDepositoAtual); } catch (e) {}
+    };
+    // Para o Mural (ADM): como ficou o dia útil anterior em cada depósito diário (quais turnos faltaram)
     window.diarioResumoAnterior = function () {
       const dia = diarioDiaUtilAnterior();
       if (dia < diarioInicio()) return null;
-      return { dia, deps: diarioDeps().map(d => ({ nome: d.nome, sigla: d.sigla, feito: diarioFeitos(d).has(dia) })) };
+      return { dia, deps: diarioDeps().map(d => { const oc = diarioOcupacao(d, dia), sl = diarioSlots(d, dia), falt = sl.filter(s => !oc[s.id]);
+        return { nome: d.nome, sigla: d.sigla, feito: !falt.length, total: sl.length, feitos: sl.length - falt.length,
+          faltam: falt.map(s => ({ nome: s.nome, just: diarioJust(diarioJustId(d, dia, s.id)) })) }; }) };
     };
     const diaBR = y => { const [a, m, d] = y.split('-').map(Number); const t = new Date(a, m - 1, d); const s = t.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }); return s.charAt(0).toUpperCase() + s.slice(1); };
-    // Dia útil sem inventário: uma linha normal da tabela, com a data na coluna Data (fica no lugar certo da ordem e entra nos filtros)
-    function htmlLinhaDiaNaoFeito(ymd) {
-      const [a, m, d] = ymd.split('-').map(Number);
+    // Turno sem inventário: uma linha normal da tabela (data + qual turno faltou + justificativa)
+    function htmlLinhaDiaNaoFeito(f, dep) {
+      const ymd = f.dia, [a, m, d] = ymd.split('-').map(Number), id = diarioJustId(dep, ymd, f.slot.id), j = diarioJust(id), adm = !!(window.usrEhAdm && usrEhAdm());
       const tr = '<td class="py-2 px-3 text-center text-rose-300">-</td>';
+      const just = adm
+        ? `<input type="text" value="${escHtml(j ? j.texto : '')}" placeholder="Digite a justificativa (opcional)" onchange="diarioJustSalvar('${escHtml(id)}', this.value)" onkeydown="if (event.key === 'Enter') this.blur()" class="mt-1 w-full min-w-[220px] border border-rose-200 bg-white rounded-md px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-200">`
+        : '';
+      const status = j ? `<span class="block text-[11px] text-slate-600 mt-0.5"><b>Justificativa:</b> ${escHtml(j.texto)}${j.por ? ` <span class="text-slate-400">— ${escHtml(j.por)}</span>` : ''}</span>`
+        : '<span class="block text-[11px] italic text-rose-500 mt-0.5">Sem justificativa</span>';
       return `<tr class="bg-rose-50 hover:bg-rose-100/70">
         <td class="py-2 px-3 text-center text-xs font-semibold text-rose-800">${new Date(a, m - 1, d).toLocaleDateString('pt-BR')}</td>
-        ${tr}${tr}${tr}${tr}${tr}${tr}${tr}
+        <td class="py-2 px-3 text-center text-xs font-bold text-rose-800 whitespace-nowrap">${escHtml(f.slot.nome)}</td>${tr}${tr}${tr}${tr}${tr}${tr}
         <td class="py-2 px-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-bold bg-rose-600 text-white whitespace-nowrap">NÃO FEITO</span></td>
-        <td class="py-2 px-3 text-xs font-semibold text-rose-800">Nenhum inventário neste dia útil (${escHtml(diaBR(ymd).split(',')[0])})</td></tr>`;
+        <td class="py-2 px-3 text-xs text-rose-800"><span class="font-semibold">Faltou: ${escHtml(f.slot.nome)} (${escHtml(diaBR(ymd).split(',')[0])})</span>${status}${just}</td></tr>`;
+    }
+
+    // Tela de acesso: escolha de qual inventário do dia é (turno). Os já feitos hoje aparecem travados.
+    function diarioTurnoRender() {
+      const box = document.getElementById('deposito-turno-box'); if (!box) return;
+      const dep = selectedDeposito && depositosCad.find(d => d.nome === selectedDeposito.nome || diarioSigla(d) === String(selectedDeposito.codigo || '').toUpperCase());
+      if (!diarioEh(dep) || (typeof ppEhPortaPalete === 'function' && ppEhPortaPalete(selectedDeposito.nome))) { box.classList.add('hidden'); box.innerHTML = ''; selectedDeposito.turnoSlot = null; return; }
+      const hoje = diaYmd(new Date()), slots = diarioSlots(dep, hoje), oc = diarioOcupacao(dep, hoje);
+      const livres = slots.filter(s => !oc[s.id]);
+      if (selectedDeposito.turnoSlot && !livres.some(s => s.id === selectedDeposito.turnoSlot) && selectedDeposito.turnoSlot !== 'extra') selectedDeposito.turnoSlot = null;
+      if (!selectedDeposito.turnoSlot && livres.length === 1 && slots.length === 1) selectedDeposito.turnoSlot = livres[0].id;
+      const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const quem = i => { const t = (i.tentativas || [])[0]; return (t && t.colaborador) || i.colaborador || ''; };
+      const opc = slots.map(s => { const f = oc[s.id], sel = selectedDeposito.turnoSlot === s.id;
+        return f ? `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-xs text-emerald-800"><span><i class="fa-solid fa-check mr-1"></i><b>${escHtml(s.nome)}</b></span><span>feito por ${escHtml(quem(f))} às ${hora(f.dataFinal)}</span></div>`
+          : `<button type="button" onclick="selectedDeposito.turnoSlot = '${s.id}'; diarioTurnoRender()" class="w-full text-left px-3 py-2 rounded-lg border text-sm font-semibold ${sel ? 'border-tbx-navy bg-tbx-navy text-white' : 'border-blue-200 bg-white text-slate-700 hover:bg-blue-50'}"><i class="fa-regular ${sel ? 'fa-circle-dot' : 'fa-circle'} mr-2"></i>${escHtml(s.nome)}</button>`; }).join('');
+      const extra = livres.length ? '' : `<button type="button" onclick="selectedDeposito.turnoSlot = 'extra'; diarioTurnoRender()" class="w-full text-left px-3 py-2 rounded-lg border text-sm font-semibold ${selectedDeposito.turnoSlot === 'extra' ? 'border-tbx-navy bg-tbx-navy text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}"><i class="fa-solid fa-plus mr-2"></i>Extra (os ${slots.length} de hoje já foram feitos)</button>`;
+      box.innerHTML = `<p class="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Qual inventário do dia você vai fazer?</p><div class="space-y-1.5 text-left">${opc}${extra}</div>`;
+      box.classList.remove('hidden');
     }
 
     // VISUALIZAÇÃO DE INVENTÁRIO: lista de depósitos -> inventários de cada depósito
@@ -6269,9 +6334,9 @@
         return;
       }
       const itens = doDeposito.map(inv => ({ t: new Date(inv.dataFinal).getTime() || 0, inv }))
-        .concat(faltas.map(y => { const [a, m, d] = y.split('-').map(Number); return { t: new Date(a, m - 1, d, 23, 59, 59).getTime(), falta: y }; }))
+        .concat(faltas.map((f, k) => { const [a, m, d] = f.dia.split('-').map(Number); return { t: new Date(a, m - 1, d, 23, 59, 59).getTime() - k, falta: f }; }))
         .sort((a, b) => b.t - a.t);
-      tbody.innerHTML = itens.map(it => it.falta ? htmlLinhaDiaNaoFeito(it.falta) : (inv => (inv.status === 'pendente-cadastro' ? htmlPendenteCadastro(inv) : '') + (() => {
+      tbody.innerHTML = itens.map(it => it.falta ? htmlLinhaDiaNaoFeito(it.falta, depCad) : (inv => (inv.status === 'pendente-cadastro' ? htmlPendenteCadastro(inv) : '') + (() => {
         if (inv.origem === 'porta-palete' && inv.posicoes) return inv.posicoes.length ? htmlLinhasPortaPalete(inv) : htmlLinhaPosicaoVazia(inv);
         const linhas = construirLinhasComparativas(inv.tentativas, inv.dadosSistema, inv.desconsideradas);
         return linhas.length ? htmlLinhasVisualizacao(linhas, `vis-${inv.id}`, inv) : htmlLinhaPosicaoVazia(inv);
@@ -6780,11 +6845,17 @@
     }
 
     // Inventário sem produto (sistema e físico): 100% correto. Precisa aparecer como registro.
+    // Etiqueta do turno (Início do 1º turno, ...) embaixo da hora, nos depósitos diários
+    function invTurnoTag(inv) {
+      if (!inv || !inv.turnoSlot || !inv.deposito) return '';
+      const dep = (depositosCad || []).find(d => d.nome === inv.deposito.nome || diarioSigla(d) === String(inv.deposito.codigo || '').toUpperCase());
+      const nome = dep ? diarioSlotNome(dep, inv.turnoSlot) : ''; return nome ? `<span class="block text-[10px] font-semibold text-indigo-600 whitespace-nowrap">${escHtml(nome)}</span>` : '';
+    }
     function htmlLinhaPosicaoVazia(inv) {
       const d = inv.dataFinal ? new Date(inv.dataFinal) : null, ult = (inv.tentativas || [])[(inv.tentativas || []).length - 1];
       return `<tr class="hover:bg-blue-50/50">
         <td class="py-2 px-3 text-center text-xs text-slate-500">${d ? d.toLocaleDateString('pt-BR') : '-'}</td>
-        <td class="py-2 px-3 text-center text-xs text-slate-500">${d ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}</td>
+        <td class="py-2 px-3 text-center text-xs text-slate-500">${d ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}${invTurnoTag(inv)}</td>
         <td class="py-2 px-3 text-center text-slate-300">-</td>
         <td class="py-2 px-3 text-center font-semibold text-slate-700">Sem produto</td><td class="py-2 px-3 text-center font-bold">X</td>
         <td class="py-2 px-3 text-center font-semibold text-slate-700">Sem produto</td><td class="py-2 px-3 text-center font-bold">X</td>
@@ -6821,7 +6892,7 @@
         return `
           <tr class="${trClass}">
             <td class="py-2 px-3 text-center text-xs text-slate-500">${dataStr}</td>
-            <td class="py-2 px-3 text-center text-xs text-slate-500">${horaStr || '-'}</td>
+            <td class="py-2 px-3 text-center text-xs text-slate-500">${horaStr || '-'}${invTurnoTag(inv)}</td>
             <td class="py-2 px-3 text-center text-slate-300">-</td>
             <td class="py-2 px-3 text-center font-mono font-semibold text-slate-800">${contou ? l.sku : (l.status === 'nao-contado' ? '-' : 'Sem produto')}</td>
             <td class="py-2 px-3 text-center font-bold">${contou && l.status !== 'nao-contado' ? l.fisico : (l.status === 'nao-contado' ? '-' : 'X')}</td>
@@ -10448,10 +10519,12 @@
         if (!(window.usrEhAdm && usrEhAdm()) || !window.diarioResumoAnterior) return '';
         const r = diarioResumoAnterior(); if (!r || !r.deps.length) return '';
         const [a, m, d] = r.dia.split('-').map(Number), txt = new Date(a, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
-        const faltou = r.deps.filter(x => !x.feito);
+        const faltou = r.deps.filter(x => !x.feito), nFalt = faltou.reduce((n, x) => n + x.faltam.length, 0);
         return `<div class="${faltou.length ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-200'} border-2 rounded-2xl px-5 md:px-6 py-4 mb-4">
-            <p class="text-base md:text-lg font-bold ${faltou.length ? 'text-rose-900' : 'text-emerald-800'}"><i class="fa-solid fa-calendar-check mr-2"></i>ADM · Inventários diários de ${esc(txt)}: ${faltou.length ? faltou.length + ' depósito' + (faltou.length > 1 ? 's' : '') + ' NÃO ' + (faltou.length > 1 ? 'foram contados' : 'foi contado') : 'todos foram contados'}</p>
-            <div class="mt-2 flex flex-wrap gap-2">${r.deps.map(x => `<span class="px-3 py-1.5 rounded-full text-sm font-semibold ${x.feito ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-600 text-white'}"><i class="fa-solid ${x.feito ? 'fa-check' : 'fa-xmark'} mr-1"></i>${esc(x.nome)} <span class="font-mono text-xs opacity-80">${esc(x.sigla)}</span></span>`).join('')}</div>
+            <p class="text-base md:text-lg font-bold ${faltou.length ? 'text-rose-900' : 'text-emerald-800'}"><i class="fa-solid fa-calendar-check mr-2"></i>ADM · Inventários diários de ${esc(txt)}: ${faltou.length ? nFalt + ' inventário' + (nFalt > 1 ? 's' : '') + ' NÃO ' + (nFalt > 1 ? 'feitos' : 'feito') : 'todos feitos'}</p>
+            <div class="mt-2 flex flex-wrap gap-2">${r.deps.map(x => `<span class="px-3 py-1.5 rounded-full text-sm font-semibold ${x.feito ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-600 text-white'}"><i class="fa-solid ${x.feito ? 'fa-check' : 'fa-xmark'} mr-1"></i>${esc(x.nome)} <span class="font-normal opacity-80">${x.feitos}/${x.total}</span></span>`).join('')}</div>
+            ${faltou.length ? `<ul class="mt-3 space-y-1">${faltou.map(x => `<li class="text-sm text-rose-900"><b>${esc(x.nome)}</b> — faltou: ${x.faltam.map(f => `<b>${esc(f.nome)}</b> ${f.just ? `<span class="text-slate-700">(${esc(f.just.texto)})</span>` : '<span class="italic text-rose-600">(sem justificativa)</span>'}`).join(' · ')}</li>`).join('')}</ul>
+            <p class="text-xs text-rose-800 mt-2">Para justificar: Visualização → abra o depósito → digite na linha vermelha do turno.</p>` : ''}
           </div>`;
       }
       function andamentoRender() {
