@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261126-171800">
+  <meta name="tbx-versao" content="20261126-173800">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -10373,6 +10373,7 @@
       const lerArr = k => { try { const v = JSON.parse(localStorage.getItem(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
       const gravarArr = (k, v) => localStorage.setItem(k, JSON.stringify(v));
       const eu = () => (window.usrSessao && usrSessao()) || null;
+      const souMurilo = () => { const u = eu(); return !!u && u.login === ADM_LOGIN; };   // quadros ADM do Mural: só o murilo.h (não os outros com permissão de ADM)
       const quando = d => { const t = new Date(d); if (isNaN(t)) return ''; const hoje = new Date(); const mesmoDia = t.toDateString() === hoje.toDateString(); return (mesmoDia ? 'hoje' : t.toLocaleDateString('pt-BR')) + ' às ' + t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
       function usuarios() {
         let cs = []; try { cs = JSON.parse(localStorage.getItem('tbx_colaboradores')) || []; } catch (e) {}
@@ -10508,7 +10509,7 @@
         }).sort((a, b) => a.desde - b.desde);
       }
       function pendentesAdmHtml() {
-        if (!(window.usrEhAdm && usrEhAdm()) || !window.invPendentesCadastro) return '';
+        if (!souMurilo() || !window.invPendentesCadastro) return '';
         const l = invPendentesCadastro(); if (!l.length) return '';
         return `<div class="bg-rose-50 border-2 border-rose-300 rounded-2xl px-5 md:px-6 py-4 mb-4">
             <p class="text-base md:text-lg font-bold text-rose-900"><i class="fa-solid fa-hourglass-half mr-2"></i>ADM: ${l.length} inventário${l.length > 1 ? 's' : ''} pendente${l.length > 1 ? 's' : ''} de cadastro de produto</p>
@@ -10517,9 +10518,10 @@
           </div>`;
       }
       function diarioAdmHtml() {
-        if (!(window.usrEhAdm && usrEhAdm()) || !window.diarioResumoAnterior) return '';
+        if (!souMurilo() || !window.diarioResumoAnterior) return '';
         const r = diarioResumoAnterior(); if (!r || !r.deps.length) return '';
         const [a, m, d] = r.dia.split('-').map(Number), txt = new Date(a, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+        r.deps = r.deps.filter(x => x.total > 0);
         const faltou = r.deps.filter(x => !x.feito), nFalt = faltou.reduce((n, x) => n + x.faltam.length, 0);
         return `<div class="${faltou.length ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-200'} border-2 rounded-2xl px-5 md:px-6 py-4 mb-4">
             <p class="text-base md:text-lg font-bold ${faltou.length ? 'text-rose-900' : 'text-emerald-800'}"><i class="fa-solid fa-calendar-check mr-2"></i>ADM · Inventários diários de ${esc(txt)}: ${faltou.length ? nFalt + ' inventário' + (nFalt > 1 ? 's' : '') + ' NÃO ' + (nFalt > 1 ? 'feitos' : 'feito') : 'todos feitos'}</p>
