@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261126-111827">
+  <meta name="tbx-versao" content="20261126-120500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -586,6 +586,26 @@
               <input type="date" id="inv-data-lancamento" onchange="invDataLancamentoMudou()" class="border border-violet-300 rounded-lg px-2 py-1.5 text-sm bg-white">
               <span id="inv-data-lancamento-info" class="text-xs text-violet-800">Hoje (normal). Para lançar um inventário antigo, escolha a data em que ele foi feito.</span>
             </div>
+
+            <!-- Balão de pensamento: atalho para o Backoffice, onde se exportam os dados do sistema -->
+            <div class="flex justify-end mb-8 pr-2">
+              <div class="relative bo-pensa">
+                <a href="https://backoffice.grupotbx.com.br" target="_blank" rel="noopener"
+                  class="relative z-10 flex items-center gap-3 bg-white border-2 border-sky-300 hover:border-sky-500 hover:bg-sky-50 text-sky-900 rounded-[2rem] pl-3 pr-5 py-2.5 shadow-md transition-colors">
+                  <span class="w-9 h-9 shrink-0 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center"><i class="fa-solid fa-cloud"></i></span>
+                  <span class="leading-tight">
+                    <span class="block text-sm font-bold">Clique aqui para acessar o sistema Backoffice</span>
+                    <span class="block text-[11px] text-sky-700/80">Pegue lá os dados do sistema e depois suba o arquivo aqui embaixo <i class="fa-solid fa-arrow-up-right-from-square ml-0.5"></i></span>
+                  </span>
+                </a>
+                <span class="absolute -bottom-3 left-8 w-4 h-4 rounded-full bg-white border-2 border-sky-300"></span>
+                <span class="absolute -bottom-6 left-5 w-2.5 h-2.5 rounded-full bg-white border-2 border-sky-300"></span>
+              </div>
+            </div>
+            <style>
+              @keyframes boFlutua { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+              .bo-pensa { animation: boFlutua 2.8s ease-in-out infinite; }
+            </style>
 
             <!-- Arquivo do sistema (estado vazio): .csv ou .xlsx exportado do sistema -->
             <input type="file" id="deposito-arquivo" accept=".csv,.xlsx,.xls,.txt" class="hidden" onchange="sisArquivoEscolhido(this.files && this.files[0]); this.value = ''">
