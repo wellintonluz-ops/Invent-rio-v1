@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261127-091500">
+  <meta name="tbx-versao" content="20261127-094000">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -7145,6 +7145,42 @@
       toastHorarioTimeout = setTimeout(() => toast.classList.add('hidden'), 4000);
     }
 
+
+
+    // ===== APAGAR / EXCLUIR: SÓ O LOGIN murilo.h =====
+    // Em toda a plataforma (inventário, cadastros, Treinamento, R.N.C, Orientação, MP.CHP, Full Magalu...) os botões de apagar/excluir
+    // registros salvos somem para os outros logins, e a função em si também recusa (mesmo se chamada de outro jeito).
+    // Montar/editar um documento (tirar uma pergunta, um passo, uma linha do rascunho) continua normal.
+    (function () {
+      const DONO = 'murilo.h';
+      const BLOQ = ['amExcluir', 'dcExcluir', 'deleteColaborador', 'dpExcluir', 'lcExcluir', 'sgExcluir', 'removerProdutoCadastro', 'removerDesconsideracao', 'invApagarFeito', 'invApagarLinha', 'invApagarPosicao', 'invSisApagar',
+        'rncExcluir', 'oriExcluir', 'excluirTreinamento', 'excluirGrupoTreinamento', 'excluirTreinamentoAplicado', 'resultadoAvaliacaoExcluir', 'cadRncExcluir', 'cadSetorExcluir', 'pesquisaExcluirFolheto', 'cancelarAgendamento',
+        'colaboradorRemoverFoto', 'docFotosRemover', 'rncApFotoRemover', 'oriApFotoRemover', 'fotosAplicacaoRemover', 'removerInstanciaModulo',
+        'deleteCatalogoProduct', 'confirmDeleteCatalogoProduct', 'plExcluir', 'abrirConfirmarApagarTicketPlat', 'executarConfirmarApagarTicketPlat', 'apagarMensagemTicketPlat'];
+      const pode = () => { try { const u = window.usrSessao && usrSessao(); return !!u && u.login === DONO; } catch (e) { return false; } };
+      window.tbxPodeApagar = pode;
+      const CSS = 'html:not(.tbx-pode-apagar) :is(' + BLOQ.map(n => '[onclick*="' + n + '("]').join(',') + '){display:none !important}';
+      function aplicar(w) {
+        try {
+          const d = w.document; if (!d || !d.documentElement) return;
+          d.documentElement.classList.toggle('tbx-pode-apagar', pode());
+          if (!d.getElementById('tbx-css-apagar')) { const st = d.createElement('style'); st.id = 'tbx-css-apagar'; st.textContent = CSS; (d.head || d.documentElement).appendChild(st); }
+          BLOQ.forEach(n => {
+            const f = w[n]; if (typeof f !== 'function' || f.__tbxBloq) return;
+            const g = function (...a) {
+              if (!pode()) { try { w.alert('Apagar / excluir é só para o login murilo.h.'); } catch (e) {} return; }
+              return f.apply(this, a);
+            };
+            g.__tbxBloq = true;
+            try { w[n] = g; } catch (e) {}
+          });
+        } catch (e) {}
+      }
+      function rodar() { aplicar(window); document.querySelectorAll('iframe').forEach(f => { try { if (f.contentWindow) aplicar(f.contentWindow); } catch (e) {} }); }
+      setInterval(rodar, 1000);
+      document.addEventListener('DOMContentLoaded', rodar);
+      setTimeout(rodar, 0);
+    })();
 
     // ===== HISTÓRICO DE AÇÕES (auditoria) =====
     // Tudo o que cada login faz fica registrado: entrar/sair, inventários e qualquer cadastro/alteração/exclusão em qualquer tela
