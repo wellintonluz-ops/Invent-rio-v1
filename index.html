@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261127-162000">
+  <meta name="tbx-versao" content="20261127-163000">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -4312,17 +4312,28 @@
       }
 
       empty.classList.add('hidden');
-      tbody.innerHTML = lista.map((item, i) => `
-        <tr class="${item.naoContado ? 'bg-slate-50' : 'hover:bg-blue-50/50'}">
+      // Qualquer usuário pode corrigir a quantidade digitada errado (lápis) ou apagar o SKU da contagem (lixeira)
+      tbody.innerHTML = lista.map((item, i) => contagemEditandoIdx === i ? `
+        <tr class="bg-amber-50" data-cont-linha="${i}">
+          <td class="py-2 px-4 font-mono font-semibold text-slate-800">${item.produto}</td>
+          <td class="py-2 px-4 text-center"><input id="contagem-edit-qtd" type="number" inputmode="numeric" min="0" step="any" value="${item.naoContado || item.quantidade == null ? '' : item.quantidade}"
+              onkeydown="if (event.key === 'Enter') { event.preventDefault(); salvarEdicaoContagem(${i}); } else if (event.key === 'Escape') { event.preventDefault(); cancelarEdicaoContagem(); }"
+              class="w-24 text-center font-bold border-2 border-amber-400 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-300"></td>
+          <td class="py-2 px-4 text-center whitespace-nowrap">
+            <button onclick="salvarEdicaoContagem(${i})" title="Salvar a quantidade" class="text-emerald-600 hover:text-emerald-700 p-1.5"><i class="fa-solid fa-check"></i></button>
+            <button onclick="cancelarEdicaoContagem()" title="Cancelar" class="text-slate-400 hover:text-slate-600 p-1.5"><i class="fa-solid fa-xmark"></i></button>
+          </td>
+        </tr>` : `
+        <tr class="${item.naoContado ? 'bg-slate-50' : 'hover:bg-blue-50/50'}" data-cont-linha="${i}">
           <td class="py-2.5 px-4 font-mono font-semibold text-slate-800">${item.produto}</td>
-          <td class="py-2.5 px-4 text-center font-bold ${item.naoContado ? 'text-slate-400 font-normal italic' : ''}">${item.naoContado ? 'Não Contado' : item.quantidade}</td>
-          <td class="py-2.5 px-4 text-center">
-            ${ehAdminLogado() ? `<button onclick="removerContagemItem(${i})" title="Remover (ADM)" class="text-slate-400 hover:text-tbx-red p-1 transition-colors">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>` : '<span class="text-slate-300 text-xs">-</span>'}
+          <td class="py-2.5 px-4 text-center font-bold ${item.naoContado ? 'text-slate-400 font-normal italic' : ''}">${item.naoContado ? 'Não Contado' : item.quantidade}${item.corrigidoDe !== undefined ? `<span class="block text-[10px] font-normal text-amber-700" title="Quantidade corrigida">corrigido (era ${item.corrigidoDe === null ? 'não contado' : item.corrigidoDe})</span>` : ''}</td>
+          <td class="py-2.5 px-4 text-center whitespace-nowrap">
+            <button onclick="editarContagemItem(${i})" data-cont-editar="${i}" title="Corrigir a quantidade" class="text-slate-400 hover:text-blue-600 p-1.5 transition-colors"><i class="fa-solid fa-pen"></i></button>
+            <button onclick="removerContagemItem(${i})" data-cont-apagar="${i}" title="Apagar este SKU da contagem" class="text-slate-400 hover:text-tbx-red p-1.5 transition-colors"><i class="fa-solid fa-trash-can"></i></button>
           </td>
         </tr>
       `).join('');
+      if (contagemEditandoIdx !== null) { const e = document.getElementById('contagem-edit-qtd'); if (e) { e.focus(); e.select(); } }
     }
 
     // Mostra, no topo da contagem física, quais itens ainda faltam ser recontados quando a
@@ -4350,10 +4361,37 @@
       }).join('');
     }
 
-    function removerContagemItem(index) {
-      if (!ehAdminLogado()) { alert('Só o ADM pode apagar linhas da contagem.'); return; }
-      inventarioAtual.contagemFisica.splice(index, 1);
+    // Corrigir a quantidade / apagar o SKU da contagem em andamento (todos os usuários). Fica no Histórico de Ações.
+    let contagemEditandoIdx = null;
+    const contagemDep = () => (inventarioAtual && inventarioAtual.deposito && inventarioAtual.deposito.nome) || '';
+    const contagemQtdTxt = it => it.naoContado || it.quantidade == null ? 'não contado' : it.quantidade + ' un.';
+    function editarContagemItem(index) {
+      if (!inventarioAtual || !inventarioAtual.contagemFisica[index]) return;
+      contagemEditandoIdx = index; renderContagemLista();
+    }
+    function cancelarEdicaoContagem() { contagemEditandoIdx = null; renderContagemLista(); }
+    function salvarEdicaoContagem(index) {
+      const it = inventarioAtual && inventarioAtual.contagemFisica[index]; if (!it) { cancelarEdicaoContagem(); return; }
+      const v = (document.getElementById('contagem-edit-qtd') || {}).value;
+      if (v === '' || v == null) { alert('Digite a quantidade certa (ou use a lixeira para apagar o SKU da contagem).'); return; }
+      const qtd = Number(v); if (isNaN(qtd) || qtd < 0) { alert('Quantidade inválida.'); return; }
+      const antes = contagemQtdTxt(it);
+      if (!(it.naoContado || it.quantidade == null) && it.quantidade === qtd) { cancelarEdicaoContagem(); return; }
+      if (it.corrigidoDe === undefined) it.corrigidoDe = it.naoContado ? null : it.quantidade;
+      it.quantidade = qtd; it.naoContado = false; it.corrigidoEm = new Date().toISOString();
+      contagemEditandoIdx = null;
+      try { if (window.tbxLog) tbxLog('Inventário', 'Corrigiu quantidade na contagem', `${contagemDep()} · ${it.produto}: ${antes} → ${qtd} un.`); } catch (e) {}
       renderContagemLista();
+      try { invSalvarAndamento && invSalvarAndamento(); } catch (e) {}
+    }
+    function removerContagemItem(index) {
+      const it = inventarioAtual && inventarioAtual.contagemFisica[index]; if (!it) return;
+      if (!confirm(`Apagar o SKU ${it.produto} (${contagemQtdTxt(it)}) desta contagem?\n\nDepois é só digitar o SKU e a quantidade de novo, se precisar.`)) return;
+      inventarioAtual.contagemFisica.splice(index, 1);
+      contagemEditandoIdx = null;
+      try { if (window.tbxLog) tbxLog('Inventário', 'Apagou SKU da contagem', `${contagemDep()} · ${it.produto} (${contagemQtdTxt(it)})`); } catch (e) {}
+      renderContagemLista();
+      try { invSalvarAndamento && invSalvarAndamento(); } catch (e) {}
     }
 
     // Confirma explicitamente que nada foi encontrado fisicamente e já encerra a contagem
