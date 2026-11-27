@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261127-094000">
+  <meta name="tbx-versao" content="20261127-120500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -2399,7 +2399,7 @@
       const rodape = (txt, cor) => { const el = $('nuvem-status'); if (el) { el.innerText = txt; el.className = 'text-[11px] ' + (cor || 'text-slate-400'); } };
 
       // ---------- Atualizar a tela com dados de outras pessoas, sem atrapalhar quem está mexendo ----------
-      const OCIOSO_MS = 45000;                       // recarrega sozinho depois de 45 s sem mexer (ou na hora, se a aba estiver em segundo plano)
+      const OCIOSO_MS = 3 * 60000;                   // recarrega sozinho só depois de 3 min sem mexer e sem nada aberto (nem em segundo plano ela recarrega com trabalho aberto)
       let ultimaAtividade = Date.now(), recargaPedida = false, recargaTimer = null;
       const marcarAtividade = () => { ultimaAtividade = Date.now(); };
       const ouvirAtividade = w => {
@@ -2470,7 +2470,7 @@
         if (!recargaPedida) return;
         const av = $('nuvem-aviso'); if (av) av.classList.toggle('hidden', inventarioEmAndamento());   // durante inventário em andamento a bolinha some
         const parado = Date.now() - ultimaAtividade >= OCIOSO_MS;
-        if (!inventarioEmAndamento() && (document.hidden || (parado && !telaOcupada(document)))) { recarregarAgora(true).then(ok => { if (!ok) recargaPedida = false; }); return; }
+        if (!inventarioEmAndamento() && parado && !telaOcupada(document)) { recarregarAgora(true).then(ok => { if (!ok) recargaPedida = false; }); return; }
         recargaTimer = setTimeout(verificarRecarga, 3000);
       }
       // Versão nova do site publicada: a tela atualiza sozinha (quando ninguém estiver mexendo e sem inventário em andamento),
@@ -2511,7 +2511,7 @@
         recargaPedida = true;
         if (!recargaTimer) recargaTimer = setTimeout(verificarRecarga, 3000);
       }
-      document.addEventListener('visibilitychange', () => { if (document.hidden && recargaPedida && !recargaTimer) verificarRecarga(); });
+      document.addEventListener('visibilitychange', () => { if (recargaPedida && !recargaTimer) recargaTimer = setTimeout(verificarRecarga, 3000); });
 
       async function carregarFirebase() {
         const [app, auth, fs] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')]);
@@ -2938,6 +2938,7 @@
             const r = await N.adapter.travar(cod(l), abaId, l + ' · ' + aparelho(), TTL);
             if (loginSessao() !== l) return;
             if (r.ok) { estado = 'ativo'; ultimo = Date.now(); }
+            else if (!r.lk || !r.lk.dono || r.lk.dono === abaId) { /* resposta estranha: tenta de novo no próximo ciclo, não desconecta */ }
             else if (estado === 'livre') perguntar(r.lk);
             else bloquear(r.lk);
           } catch (e) { /* sem conexão: tenta de novo no próximo ciclo */ }
@@ -7146,6 +7147,45 @@
     }
 
 
+
+
+    // ===== SAÍDA AUTOMÁTICA POR INATIVIDADE: 2 HORAS SEM NENHUMA AÇÃO =====
+    // Conta qualquer clique, tecla, rolagem ou toque (na plataforma e nos apps de dentro: Treinamento, MP.CHP...). Trocar de aba/janela
+    // ou deixar a tela parada não desloga antes das 2 h. Antes de sair, grava tudo (o inventário em andamento continua salvo).
+    (function () {
+      const LIMITE = 2 * 60 * 60 * 1000, K = 'tbx_ult_ativ';
+      const logado = () => { try { return !!JSON.parse(sessionStorage.getItem('tbx_usuario_sessao')); } catch (e) { return false; } };
+      let ult = Number(sessionStorage.getItem(K)) || Date.now(), gravado = 0;
+      // só ação de verdade da pessoa (rolagem/eventos disparados pelo próprio sistema não contam)
+      const marcar = e => { if (e && e.isTrusted === false) return; ult = Date.now(); if (ult - gravado > 15000) { gravado = ult; try { sessionStorage.setItem(K, String(ult)); } catch (x) {} } };
+      const ouvir = w => { try { if (!w || w.__tbxInat) return; w.__tbxInat = true; ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => w.document.addEventListener(ev, marcar, { capture: true, passive: true })); } catch (e) {} };
+      ouvir(window);
+      setInterval(() => document.querySelectorAll('iframe').forEach(f => ouvir(f.contentWindow)), 2000);
+      if (!sessionStorage.getItem(K)) { try { sessionStorage.setItem(K, String(ult)); } catch (e) {} }   // recarregar a página não zera a contagem
+      let saindo = false;
+      async function conferir() {
+        if (saindo) return;
+        if (!logado()) { ult = Date.now(); return; }
+        if (Date.now() - ult < LIMITE) return;
+        saindo = true;
+        try { if (window.tbxLog) { tbxLog('Acesso', 'Saiu sozinho: 2 horas sem nenhuma ação', ''); tbxLogGravarJa(); } } catch (e) {}
+        try { if (window.TBXArmazem && TBXArmazem.salvarAgora) await TBXArmazem.salvarAgora(); } catch (e) {}
+        try { if (window.NUVEM && NUVEM.varrer) await Promise.race([NUVEM.varrer(true), new Promise(r => setTimeout(r, 4000))]); } catch (e) {}
+        try { sessionStorage.setItem('tbx_saiu_inativo', String(Date.now())); sessionStorage.removeItem(K); } catch (e) {}
+        if (window.usrSair) usrSair(); else { sessionStorage.removeItem('tbx_usuario_sessao'); location.reload(); }
+      }
+      setInterval(conferir, 30000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) conferir(); });
+      // aviso na tela de login
+      document.addEventListener('DOMContentLoaded', () => {
+        let t = 0; try { t = Number(sessionStorage.getItem('tbx_saiu_inativo')) || 0; sessionStorage.removeItem('tbx_saiu_inativo'); } catch (e) {}
+        if (!t) return;
+        setTimeout(() => { const m = document.createElement('div'); m.className = 'fixed inset-x-0 top-4 z-[500] flex justify-center px-4';
+          m.innerHTML = '<div style="background:#0f2a4a" class="text-white rounded-xl shadow-2xl px-5 py-3 text-sm max-w-md">Você saiu automaticamente depois de <b>2 horas sem nenhuma ação</b>. O que você tinha feito ficou salvo: é só entrar de novo. <button class="ml-2 underline font-bold">OK</button></div>';
+          m.querySelector('button').onclick = () => m.remove(); document.body.appendChild(m); setTimeout(() => m.remove(), 30000); }, 800);
+      });
+      window.tbxInatividade = { ultima: () => ult, limite: LIMITE, conferir };
+    })();
 
     // ===== APAGAR / EXCLUIR: SÓ O LOGIN murilo.h =====
     // Em toda a plataforma (inventário, cadastros, Treinamento, R.N.C, Orientação, MP.CHP, Full Magalu...) os botões de apagar/excluir
