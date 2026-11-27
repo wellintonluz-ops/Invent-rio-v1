@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261127-120500">
+  <meta name="tbx-versao" content="20261127-123000">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -2727,9 +2727,12 @@
       function ciclo() {
         if (location.hash === '#nuvem-teste') return;
         const n = $('nuvem-overlay'), nuvemAberta = n && !n.classList.contains('hidden');
-        if (!sessao() && !nuvemAberta) {
+        // A tela de login fica montada por baixo da tela azul da nuvem (z-index menor): quando a nuvem some, o login já está lá
+        // (antes havia um instante sem nenhuma das duas e a plataforma "piscava" por trás).
+        if (!sessao()) {
           const o = montar(), era = o.classList.contains('hidden'); o.classList.remove('hidden');
-          if (era) { $('usr-f-login').classList.remove('hidden'); $('usr-f-troca').classList.add('hidden'); erro(''); $('usr-p').value = ''; $('usr-u').focus(); }
+          if (era) { $('usr-f-login').classList.remove('hidden'); $('usr-f-troca').classList.add('hidden'); erro(''); $('usr-p').value = ''; o.__foco = false; }
+          if (!nuvemAberta && !o.__foco) { o.__foco = true; $('usr-u').focus(); }
         } else if (overlay) overlay.classList.add('hidden');
         aplicar();   // acompanha mudanças de permissão feitas pelo ADM (inclusive vindas da nuvem)
         if (window.tbxModo) tbxModo();
@@ -3671,6 +3674,7 @@
   <script type="text/tbx-adiado">
     // TAB NAVIGATION
     function switchTab(tabId) {
+      if (tabId === 'mural') { if (window.muralAbrir) muralAbrir(); return; }   // o Mural não é uma aba comum (evita erro ao voltar para ele)
       if (invTrava() && !invRestaurando) { invAviso(); return; }
       if (tabId === 'inventarios-feitos') { window.visAba = 'feitos'; tabId = 'controle-inventario'; }
       if (window.usrPode && !usrPode(tabId)) return;
@@ -3800,7 +3804,10 @@
         let texto = '';
         if (inventarioAtual) {
           const tela = ['deposito-validar-fisico', 'deposito-resultado'].find(id => !document.getElementById(id).classList.contains('hidden')) || 'deposito-validar-fisico';
-          texto = JSON.stringify({ selectedDeposito, inventarioAtual, tela });
+          // também o que está sendo digitado na contagem (SKU escolhido, quantidade, busca): volta exatamente igual
+          const v = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+          const rasc = tela === 'deposito-validar-fisico' ? { sku: contagemSkuSelecionado || '', qtd: v('contagem-qtd-input'), busca: v('contagem-sku-input') } : null;
+          texto = JSON.stringify({ selectedDeposito, inventarioAtual, tela, rasc });
         } else if (invPreparo && selectedDeposito) {
           texto = JSON.stringify({ selectedDeposito, invPreparo, sistemaData, sisArquivoNome, tela: 'deposito-inventario' });
         }
@@ -3920,6 +3927,11 @@
             document.getElementById('page-title').innerText = `Contagem Física - ${selectedDeposito.nome}`;
             document.getElementById('contagem-titulo').innerText = `${selectedDeposito.nome} (${selectedDeposito.codigo})`;
             resetContagemStepSku(); renderContagemLista();
+            const r = raw.rasc;
+            if (r) {
+              if (r.sku) { selecionarSkuContagem(r.sku); if (r.qtd !== '' && r.qtd != null) document.getElementById('contagem-qtd-input').value = r.qtd; }
+              else if (r.busca) document.getElementById('contagem-sku-input').value = r.busca;
+            }
           }
         } else {
           const s = ppSessoes.find(x => !x.fim);
