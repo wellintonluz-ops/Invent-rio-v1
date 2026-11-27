@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261127-165500">
+  <meta name="tbx-versao" content="20261127-173000">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -693,6 +693,12 @@
               <p id="pp-rua-info" class="text-xs text-slate-500 mt-2"></p>
               <p class="text-xs font-semibold text-slate-600 mt-4 mb-2">Produtos desta rua (só os SKUs, sem quantidade):</p>
               <div id="pp-skus" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto"></div>
+              <p class="text-xs font-semibold text-slate-600 mt-4 mb-2">Começar a 1ª coluna por:</p>
+              <div class="flex flex-wrap gap-2" id="pp-inicio-box">
+                <label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-sm cursor-pointer has-[:checked]:border-tbx-navy has-[:checked]:bg-blue-50"><input type="radio" name="pp-inicio" value="baixo" checked class="accent-[#1e3a5f]"> Nível 1 (embaixo, subindo)</label>
+                <label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 text-sm cursor-pointer has-[:checked]:border-tbx-navy has-[:checked]:bg-blue-50"><input type="radio" name="pp-inicio" value="cima" class="accent-[#1e3a5f]"> Nível 6 (em cima, descendo)</label>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1">Zigue-zague: terminou a coluna no nível 6, a próxima começa no 6 (descendo); terminou no 1, a próxima começa no 1 (subindo). Assim você continua na mesma altura ao trocar de coluna.</p>
               <button onclick="ppIniciar()" class="mt-5 px-5 py-2.5 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90"><i class="fa-solid fa-play mr-2"></i>Iniciar contagem da rua</button>
             </div>
           </div>
@@ -10070,15 +10076,26 @@
       reader.readAsArrayBuffer(file);
     }
 
+    // Ordem em zigue-zague: cada coluna é percorrida no sentido contrário da anterior (1→6, depois 6→1, depois 1→6...),
+    // então ao terminar uma coluna a próxima começa na mesma altura. 'baixo' = 1ª coluna do nível 1 ao 6; 'cima' = do 6 ao 1.
+    function ppSerpentina(pos, inicio) {
+      const cols = [...new Set(pos.filter(p => PP_RE.test(p[0])).map(p => ppParte(p[0], 1)))].sort((a, b) => +a - +b), fora = pos.filter(p => !PP_RE.test(p[0]));
+      const out = [];
+      cols.forEach((c, i) => {
+        const subindo = (i % 2 === 0) === (inicio !== 'cima');
+        out.push(...pos.filter(p => PP_RE.test(p[0]) && ppParte(p[0], 1) === c).sort((a, b) => { const x = ppOrdem(a[0]), y = ppOrdem(b[0]); return (subindo ? x[2] - y[2] : y[2] - x[2]) || x[3].localeCompare(y[3]); }));
+      });
+      return out.concat(fora);
+    }
     async function ppIniciar() {
       const sis = ppSis(); if (!sis || ppAtiva()) return;
       if (!selectedDeposito.colaborador) { ppMsg('Identifique-se primeiro (volte e informe seu nome).'); return; }
-      const rua = document.getElementById('pp-rua').value, pos = ppLinhasDe(rua);
+      const rua = document.getElementById('pp-rua').value, inicio = ((document.querySelector('input[name="pp-inicio"]:checked') || {}).value) || 'baixo', pos = ppSerpentina(ppLinhasDe(rua), inicio);
       if (!pos.length) return;
       if (ppRuasUsadas(sis).includes(rua)) { ppMsg(`A rua PP${rua} já foi contada com esta planilha. Para contar de novo, suba uma planilha nova do sistema.`); return; }
       if (!(await depLockAdquirir(selectedDeposito.codigo))) return;
       if (ppAtiva()) return;
-      const s = { id: Date.now().toString() + Math.random().toString(36).slice(2, 6), deposito: selectedDeposito.nome, codigo: selectedDeposito.codigo, responsavel: selectedDeposito.colaborador, rua, inicio: new Date().toISOString(), fim: null, sis: pos, itens: {}, atual: 0, planilhaData: sis.data };
+      const s = { id: Date.now().toString() + Math.random().toString(36).slice(2, 6), deposito: selectedDeposito.nome, codigo: selectedDeposito.codigo, responsavel: selectedDeposito.colaborador, rua, ordem: 'zigzag-' + inicio, inicio: new Date().toISOString(), fim: null, sis: pos, itens: {}, atual: 0, planilhaData: sis.data };
       ppSessoes.push(s); ppSalvar();
       ppContinuar(s.id);
     }
@@ -10258,7 +10275,7 @@
     // Encerrar: só o que foi contado vira inventário (comparação por SKU, como nos outros depósitos).
     function ppEncerrar() {
       const s = ppSessao(); if (!s) return;
-      const contadas = s.sis.filter(p => s.itens[p[0]]);
+      const contadas = s.sis.filter(p => s.itens[p[0]]).sort((a, b) => ppCmp(a[0], b[0]));   // no relatório volta à ordem normal (a contagem é em zigue-zague)
       if (!contadas.length) { alert('Nada foi contado ainda.'); return; }
       if (!confirm(`Encerrar o inventário da rua PP${s.rua}?\n\nVai para o inventário somente o que foi contado (${contadas.length} posição(ões)), e não a rua inteira.`)) return;
       const dadosSistema = [], contagemFisica = [], detalhes = [];
