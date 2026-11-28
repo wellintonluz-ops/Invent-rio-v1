@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261128-071500">
+  <meta name="tbx-versao" content="20261128-073000">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -1314,6 +1314,23 @@
             <div class="flex justify-end gap-2 mt-4">
               <button onclick="cnFecharSaida()" class="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50">Cancelar</button>
               <button onclick="cnConfirmarSaida()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-600 text-white hover:bg-rose-700">Confirmar saída</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Editar uma entrada (ex.: entrada feita sem origem, para completar quando conseguir rastrear) -->
+        <div id="modal-cn-editar" class="hidden fixed inset-0 z-[60] bg-slate-900/50 flex items-center justify-center p-4" onclick="if (event.target === this) cnFecharEditarEntrada()">
+          <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 class="text-base font-bold text-tbx-navy mb-1">Editar entrada</h3>
+            <p class="text-xs text-slate-500 mb-3" id="cn-ed-sub"></p>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Depósito de origem (de onde veio)</label>
+            <input id="cn-ed-dep" type="text" placeholder="Escolha o depósito" data-sem-corretor class="w-full border border-slate-300 rounded-lg p-2 text-sm" autocomplete="off">
+            <label class="block text-xs font-semibold text-slate-600 mt-3 mb-1">Observação</label>
+            <textarea id="cn-ed-obs" rows="3" class="w-full border border-slate-300 rounded-lg p-2 text-sm"></textarea>
+            <p id="cn-ed-erro" class="hidden text-xs text-rose-600 mt-2"></p>
+            <div class="flex justify-end gap-2 mt-4">
+              <button onclick="cnFecharEditarEntrada()" class="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50">Cancelar</button>
+              <button onclick="cnSalvarEditarEntrada()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-tbx-navy text-white hover:opacity-90">Salvar</button>
             </div>
           </div>
         </div>
@@ -5833,7 +5850,7 @@
           <td class="py-2 px-3 text-center">${m.tipo === 'fisico' ? 'Físico' : 'Sistema'}</td>
           <td class="py-2 px-3 text-center font-semibold ${m.operacao === 'saida' ? 'text-rose-600' : 'text-emerald-700'}">${m.operacao === 'saida' ? 'Saída' : 'Entrada'}</td>
           <td class="py-2 px-3 text-center font-bold">${m.qtd}</td><td class="py-2 px-3">${(m.origem === 'validacao' || m.origem === 'desconsideracao') ? cnRespDois(cnRespInv(m), m.responsavel) : escHtml(m.responsavel)}</td>
-          <td class="py-2 px-3">${origens[m.origem] || m.origem}</td><td class="py-2 px-3 text-xs font-semibold text-slate-600 whitespace-nowrap">${cnDeParaHtml(m)}</td><td class="py-2 px-3 text-xs text-slate-500">${escHtml(m.obs || '')}</td>
+          <td class="py-2 px-3">${origens[m.origem] || m.origem}</td><td class="py-2 px-3 text-xs font-semibold text-slate-600 whitespace-nowrap">${cnDeParaHtml(m)}${cnBtnEditarEntrada(m)}</td><td class="py-2 px-3 text-xs text-slate-500">${escHtml(m.obs || '')}</td>
           <td class="py-2 px-3 text-center">${cnRncCel(m)}</td><td class="py-2 px-3 text-center">${sit}</td></tr>` };
         });
       if (!tipo && (!op || op === 'desconsiderada')) {
@@ -5858,7 +5875,7 @@
         <td class="py-2 px-2 text-center font-bold">${m.qtd}</td>
         <td class="py-2 px-2">${(m.origem === 'validacao' || m.origem === 'desconsideracao') ? cnRespDois(cnRespInv(m), m.responsavel) : escHtml(m.responsavel)}</td>
         <td class="py-2 px-2">${origens[m.origem] || m.origem}</td>
-        <td class="py-2 px-2 text-xs font-semibold text-slate-600 whitespace-nowrap">${cnDeParaHtml(m)}</td>
+        <td class="py-2 px-2 text-xs font-semibold text-slate-600 whitespace-nowrap">${cnDeParaHtml(m)}${cnBtnEditarEntrada(m)}</td>
         <td class="py-2 px-2 text-xs text-slate-500" id="cn-obs-${m.id}">${cnObsVer(m)}</td>
         <td class="py-2 px-2 text-center">${cnRncCel(m)}</td></tr>` }));
       cnDesconsideracoes(k => k === sku).forEach(d => linhas.push({ t: new Date(d.data), html: `<tr class="bg-amber-50/40">
@@ -5965,7 +5982,42 @@
       return { ok: true, dep: d.nome, sigla: d.sigla, posicao, divEncontrada: st.div.value === 'sim' };
     }
     const dpkSkuOk = sku => getCatalogoProdutosAtual().some(p => String(p.sku).toUpperCase() === String(sku).toUpperCase());
-    document.addEventListener('DOMContentLoaded', () => ['cn-man-dep', 'cn-saida-destino', 'im-dep', 'vd-m-dep'].forEach(dpkMontar));
+    document.addEventListener('DOMContentLoaded', () => ['cn-man-dep', 'cn-saida-destino', 'im-dep', 'vd-m-dep', 'cn-ed-dep'].forEach(dpkMontar));
+
+    // EDITAR ENTRADA MANUAL: completar depois de onde veio (depósito/posição) e a observação — ex.: entradas dadas via código sem origem.
+    const cnPodeEditarEntrada = m => !!m && m.operacao === 'entrada' && m.origem === 'manual';
+    const cnBtnEditarEntrada = m => cnPodeEditarEntrada(m) ? `<button onclick="event.stopPropagation(); cnAbrirEditarEntrada('${m.id}')" data-editar-entrada="${m.id}" title="Editar a entrada (origem e observação)" class="ml-1 px-2 py-0.5 rounded-md border border-slate-300 text-[11px] font-semibold text-slate-600 hover:border-tbx-navy hover:text-tbx-navy whitespace-nowrap"><i class="fa-solid fa-pen mr-1"></i>Editar</button>` : '';
+    let cnEdId = null;
+    function cnAbrirEditarEntrada(id) {
+      const m = movimentos.find(x => x.id === id); if (!cnPodeEditarEntrada(m)) return;
+      cnEdId = id;
+      document.getElementById('cn-ed-sub').innerText = `${m.sku} · entrada ${m.tipo === 'fisico' ? 'física' : 'sistema'} de ${m.qtd} em ${cnQuando(m.data)}`;
+      const inp = document.getElementById('cn-ed-dep'), st = inp._dpk;
+      inp.value = m.depOrigem || ''; inp.dispatchEvent(new Event('input'));
+      if (st) { if (st.pos) st.pos.value = m.posicao || ''; if (st.div) st.div.value = m.divEncontrada === true ? 'sim' : m.divEncontrada === false && m.depOrigem ? 'nao' : ''; }
+      const ul = inp.parentNode.querySelector('ul'); if (ul) ul.classList.add('hidden');
+      document.getElementById('cn-ed-obs').value = m.obs || '';
+      document.getElementById('cn-ed-erro').classList.add('hidden');
+      document.getElementById('modal-cn-editar').classList.remove('hidden');
+    }
+    function cnFecharEditarEntrada() { cnEdId = null; document.getElementById('modal-cn-editar').classList.add('hidden'); }
+    function cnSalvarEditarEntrada() {
+      const m = movimentos.find(x => x.id === cnEdId); if (!m) { cnFecharEditarEntrada(); return; }
+      const erro = document.getElementById('cn-ed-erro'), txt = document.getElementById('cn-ed-dep').value.trim(), obs = document.getElementById('cn-ed-obs').value.trim();
+      let dpr = { dep: '', posicao: '', divEncontrada: null };
+      if (txt) { dpr = dpkLer('cn-ed-dep'); if (!dpr.ok) { erro.innerText = dpr.erro; erro.classList.remove('hidden'); return; } }
+      const antes = { dep: (m.depOrigem || '—') + (m.posicao ? ' (' + m.posicao + ')' : ''), obs: m.obs || '' };
+      m.depOrigem = dpr.dep || ''; m.posicao = dpr.posicao || ''; m.divEncontrada = txt ? dpr.divEncontrada : null; m.obs = obs;
+      const u = (window.usrSessao && usrSessao()) || {};
+      m.editadoEm = new Date().toISOString(); m.editadoPor = u.nome || u.login || '';
+      cnSalvarMov();
+      const depois = (m.depOrigem || '—') + (m.posicao ? ' (' + m.posicao + ')' : '');
+      try { if (window.tbxLog) tbxLog('Controle de Inventário', 'Editou entrada do INV.AT', `${m.sku} (${m.qtd} un., ${m.tipo === 'fisico' ? 'físico' : 'sistema'}) — origem: ${antes.dep} → ${depois}${antes.obs !== obs ? `; observação: "${antes.obs}" → "${obs}"` : ''}`); } catch (e) {}
+      cnFecharEditarEntrada();
+      try { if (document.getElementById('cn-his-tbody')) cnRenderHistorico(); } catch (e) {}
+      try { const h = document.getElementById('modal-cn-historico'); if (h && !h.classList.contains('hidden')) cnHistorico('', m.sku); } catch (e) {}
+      try { cnRenderManual(); } catch (e) {}
+    }
 
     // ENTRADA MANUAL
     function cnManRotulo() {
@@ -6008,7 +6060,7 @@
     function cnRenderManual() {
       const lista = movimentos.filter(m => m.origem === 'manual').sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 20);
       document.getElementById('cn-man-lista').innerHTML = lista.length ? lista.map(m => `<tr>
-        <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">${cnQuando(m.data)}</td><td class="py-2 px-3 text-xs font-semibold text-slate-600">${cnDeParaHtml(m)}</td>
+        <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">${cnQuando(m.data)}</td><td class="py-2 px-3 text-xs font-semibold text-slate-600">${cnDeParaHtml(m)}${cnBtnEditarEntrada(m)}</td>
         <td class="py-2 px-3 font-mono font-semibold">${escHtml(m.sku)}</td><td class="py-2 px-3 text-center">${m.tipo === 'fisico' ? 'Físico' : 'Sistema'}</td>
         <td class="py-2 px-3 text-center">${m.operacao === 'saida' ? 'Saída' : 'Entrada'}</td><td class="py-2 px-3 text-center font-bold">${m.qtd}</td><td class="py-2 px-3">${escHtml(m.responsavel)}</td></tr>`).join('')
         : '<tr><td colspan="7" class="py-6 text-center text-slate-400 text-sm">Nenhuma entrada manual ainda.</td></tr>';
@@ -7462,7 +7514,7 @@
         numero: 'Nº', data: 'Data', sku: 'SKU', origem: 'Origem do erro', responsavel: 'Responsável', erro: 'Erro detalhado', plano: 'Plano de ação', relatorio: 'Relatório final',
         assinaturas: 'Assinaturas', fotos: 'Fotos (ficha assinada)', fotosApres: 'Fotos da ocorrência', impactoEquipeIds: 'Impacto de equipe', motivoRncIds: 'Motivo RNC', turnosEquipe: 'Turno das equipes',
         turnosDest: 'Direcionado para (turnos)', titulo: 'Título', treinador: 'Treinador', texto: 'Texto', participantes: 'Participantes', linhasMinimas: 'Linhas na impressão',
-        status: 'Status', quantidade: 'Quantidade', observacao: 'Observação', descricao: 'Descrição', colaborador: 'Colaborador', deposito: 'Depósito' };
+        status: 'Status', quantidade: 'Quantidade', observacao: 'Observação', obs: 'Observação', depOrigem: 'Depósito de origem', depDestino: 'Depósito de destino', posicao: 'Posição', qtd: 'Quantidade', descricao: 'Descrição', colaborador: 'Colaborador', deposito: 'Depósito' };
       const IGN_CAMPO = /^(ultimoAcesso|atualizadoEm|criadoEm|_|citadosGeral$|turnosStatus$|apresentar$|apresentadaEm$|apresentadaPor$)/;
       const ehFoto = v => typeof v === 'string' && /^data:image\//.test(v);
       const ehId = v => typeof v === 'string' && /^[a-z]{2,10}_[0-9a-z]{6,}/i.test(v);
