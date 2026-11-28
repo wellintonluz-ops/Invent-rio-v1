@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261128-074500">
+  <meta name="tbx-versao" content="20261128-075500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -1456,7 +1456,11 @@
           <button onclick="sgVerEstrutura()" class="px-3 py-2 rounded-lg text-xs font-semibold bg-tbx-navy text-white"><i class="fa-solid fa-magnifying-glass mr-1"></i> Ver posição / faltantes</button>
           <button onclick="document.getElementById('sg-filtro').value = ''; sgRender()" class="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Limpar filtro</button>
         </div>
-        <div id="sg-abas" class="flex flex-wrap gap-1 mb-3"></div>
+        <div class="flex flex-wrap items-center gap-2 mb-3"><div id="sg-abas" class="flex flex-wrap gap-1"></div>
+          <div class="ml-auto flex flex-wrap gap-2">
+            <button onclick="sgExcelPosicoes()" title="Planilha com cada posição, os produtos e a quantidade de cada produto na posição" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50"><i class="fa-solid fa-file-excel mr-1"></i> Excel: posições</button>
+            <button onclick="sgExcelFaltantes()" title="Planilha com cada SKU (produto pai) e as peças que faltam" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50"><i class="fa-solid fa-file-excel mr-1"></i> Excel: faltantes por SKU</button>
+          </div></div>
         <div id="sg-resumo" class="flex flex-wrap gap-2 mb-3 text-xs font-semibold"></div>
         <div class="bg-white rounded-xl border border-blue-100 shadow-sm overflow-x-auto">
           <table class="w-full text-sm">
@@ -8258,8 +8262,45 @@
     // Registro: { id, sku, data, colaborador, posicao, estrutura: [{ nome, falta }], criadoEm, saida: null | { data, colaborador, registradoEm } }
     const SG_KEY = 'tbx_segregados';
     let segregados = JSON.parse(localStorage.getItem(SG_KEY)) || [];
-    let sgAba = 'total', sgDetalheId = null;
-    const SG_ABAS = { total: 'Total por SKU', faltantes: 'Peças faltantes', historico: 'Histórico', hmov: 'Histórico de entradas e saídas', hinv: 'Histórico de inventário' };
+    let sgAba = 'total', sgDetalheId = null, sgPosAberta = null;
+    // POSIÇÕES: o que tem em cada posição (só itens em estoque). Clicar abre/fecha a posição.
+    const sgPosNome = r => String(r.posicao || '').trim() || '(sem posição)';
+    const sgCmpPos = (a, b) => (a === '(sem posição)') - (b === '(sem posição)') || a.localeCompare(b, 'pt-BR', { numeric: true });
+    function sgPosicoes(lista) {
+      const m = new Map();
+      lista.forEach(r => {
+        const p = sgPosNome(r); if (!m.has(p)) m.set(p, new Map());
+        const g = m.get(p), k = sgNorm(r.sku); if (!g.has(k)) g.set(k, { sku: r.sku, un: 0, falt: {} });
+        const o = g.get(k); o.un++;
+        sgFaltando(r).forEach(n => { const c = sgChavePeca(n); o.falt[c] = o.falt[c] || { nome: n, qtd: 0 }; o.falt[c].qtd++; });
+      });
+      return [...m.entries()].sort((a, b) => sgCmpPos(a[0], b[0])).map(([pos, g]) => ({ pos, itens: [...g.values()].sort((a, b) => a.sku.localeCompare(b.sku, 'pt-BR')) }));
+    }
+    function sgPosToggle(pos) { sgPosAberta = sgPosAberta === pos ? null : pos; sgRender(); }
+    const sgArquivoData = () => sgHoje();
+    function sgBaixarXlsx(nome, aba, linhas, larguras) {
+      if (typeof XLSX === 'undefined') { alert('Não foi possível gerar o Excel (biblioteca não carregou). Recarregue a página e tente de novo.'); return; }
+      const ws = XLSX.utils.aoa_to_sheet(linhas); ws['!cols'] = larguras.map(w => ({ wch: w })); ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, linhas.length - 1), c: linhas[0].length - 1 } }) };
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, aba);
+      XLSX.writeFile(wb, `${nome}_${sgArquivoData()}.xlsx`);
+      try { if (window.tbxLog) tbxLog('Segregados', 'Baixou relatório em Excel', `${nome} (${linhas.length - 1} linha(s))`); } catch (e) {}
+    }
+    // Excel 1: posição · produto · quantidade do produto na posição
+    function sgExcelPosicoes() {
+      const L = [['Posição', 'Produto (SKU)', 'Quantidade', 'Peças faltando']];
+      sgPosicoes(sgEmEstoque()).forEach(({ pos, itens }) => itens.forEach(i => L.push([pos, i.sku, i.un, Object.values(i.falt).map(f => `${f.nome} (${f.qtd})`).join(', ')])));
+      const aj = insAjusteDe('SEG'); Object.keys(aj).filter(k => aj[k]).sort().forEach(k => L.push(['(ajuste da inspeção, sem posição)', k, aj[k], '']));
+      if (L.length === 1) { alert('Nenhum item em estoque no Segregados.'); return; }
+      sgBaixarXlsx('Segregados_posicoes', 'Posições', L, [30, 22, 12, 50]);
+    }
+    // Excel 2: produto pai (SKU) · peça faltante · quantas unidades estão sem ela
+    function sgExcelFaltantes() {
+      const L = [['Produto pai (SKU)', 'Item faltante', 'Unidades sem o item', 'Unidades do SKU em estoque', 'Posições']];
+      sgAgrupar(sgEmEstoque()).forEach(g => Object.values(g.falt).sort((a, b) => b.qtd - a.qtd || a.nome.localeCompare(b.nome, 'pt-BR')).forEach(f => L.push([g.sku, f.nome, f.qtd, g.un, g.pos.filter(Boolean).sort((a, b) => sgCmpPos(a, b)).join(', ')])));
+      if (L.length === 1) { alert('Nenhum item faltando no Segregados.'); return; }
+      sgBaixarXlsx('Segregados_itens_faltantes', 'Itens faltantes', L, [22, 34, 18, 24, 40]);
+    }
+    const SG_ABAS = { total: 'Total por SKU', posicoes: 'Posições', faltantes: 'Peças faltantes', historico: 'Histórico', hmov: 'Histórico de entradas e saídas', hinv: 'Histórico de inventário' };
     const sgSalvar = () => localStorage.setItem(SG_KEY, JSON.stringify(segregados));
     async function sgApagarTudo() {
       alert('Apagar tudo foi desativado para proteger os dados. Para remover algo, apague registro por registro.'); return;
@@ -8401,6 +8442,20 @@
           <td class="py-2 px-3"><span class="font-mono font-semibold text-tbx-navy underline">${escHtml(g.sku)}</span></td>
           <td class="py-2 px-3 text-center font-bold">${g.un}${insMarca(g.aj)}</td></tr>`).join('')
           + (grupos.length ? `<tr class="bg-slate-50 font-bold"><td class="py-2 px-3">TOTAL</td><td class="py-2 px-3 text-center">${totalUn}</td></tr>` : vazio(2, 'Nenhum item no Segregados.'));
+      } else if (sgAba === 'posicoes') {
+        const ps = sgPosicoes(estoque);
+        if (sgPosAberta && !ps.some(p => p.pos === sgPosAberta)) sgPosAberta = null;
+        thead.innerHTML = '<tr>' + th('Posição') + th('Produtos (SKUs)', 'text-center') + th('Unidades', 'text-center') + th('Peças faltando', 'text-center') + th('', 'w-10') + '</tr>';
+        tbody.innerHTML = ps.map(({ pos, itens }) => {
+          const aberta = sgPosAberta === pos, un = itens.reduce((n, i) => n + i.un, 0), fal = itens.reduce((n, i) => n + Object.values(i.falt).reduce((m, f) => m + f.qtd, 0), 0);
+          const linha = `<tr class="cursor-pointer ${aberta ? 'bg-blue-50' : 'hover:bg-blue-50/50'}" data-pos="${escHtml(pos)}" onclick="sgPosToggle(this.dataset.pos)">
+            <td class="py-2.5 px-3 font-mono font-bold text-tbx-navy">${escHtml(pos)}</td><td class="py-2.5 px-3 text-center">${itens.length}</td><td class="py-2.5 px-3 text-center font-bold">${un}</td>
+            <td class="py-2.5 px-3 text-center ${fal ? 'text-rose-700 font-semibold' : 'text-slate-400'}">${fal || '-'}</td><td class="py-2.5 px-3 text-center text-slate-400">${aberta ? '▲' : '▼'}</td></tr>`;
+          if (!aberta) return linha;
+          return linha + `<tr data-pos-itens="${escHtml(pos)}"><td colspan="5" class="px-3 pb-3 pt-0 bg-blue-50"><div class="bg-white rounded-lg border border-blue-100 overflow-hidden"><table class="w-full text-sm">
+            <thead class="text-[11px] uppercase text-slate-500 bg-slate-50"><tr><th class="py-1.5 px-3 text-left">SKU</th><th class="py-1.5 px-3 text-center">Quantidade</th><th class="py-1.5 px-3 text-left">Peças faltando</th></tr></thead>
+            <tbody class="divide-y divide-slate-100">${itens.map(i => `<tr><td class="py-1.5 px-3"><button onclick="event.stopPropagation(); sgVerEstrutura('${escHtml(i.sku).replace(/'/g, "\\'")}')" class="font-mono font-semibold text-tbx-navy underline">${escHtml(i.sku)}</button></td><td class="py-1.5 px-3 text-center font-bold">${i.un}</td><td class="py-1.5 px-3 text-xs text-rose-700">${Object.values(i.falt).map(f => escHtml(f.nome) + (f.qtd > 1 ? ` (${f.qtd})` : '')).join(', ') || '<span class="text-slate-400">-</span>'}</td></tr>`).join('')}</tbody></table></div></td></tr>`;
+        }).join('') || vazio(5, 'Nenhum item no Segregados.');
       } else if (sgAba === 'faltantes') {
         thead.innerHTML = '<tr>' + th('SKU') + th('Peça que falta') + th('Unidades sem a peça', 'text-center') + th('Unidades do SKU', 'text-center') + '</tr>';
         const linhas = [];
