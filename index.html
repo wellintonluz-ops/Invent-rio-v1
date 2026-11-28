@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="tbx-versao" content="20261128-073000">
+  <meta name="tbx-versao" content="20261128-071500">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grupo TBX - Plataforma de Inventário</title>
   <script>
@@ -3241,7 +3241,7 @@
       // Clicar numa célula mostra embaixo a tabela completa do inventário daquele depósito naquele dia.
       // Turnos: 4 em PP.PE / EXP.AT / INB.AT / OP.AT, 2 no REC.AT, 1 no BO.AT e no Porta-palete (mesma regra do indicador diário).
       // Depósitos fora da regra que tiveram inventário nas datas aparecem em "Outros depósitos".
-      let indCobDias = null, indDetDia = '';
+      let indCobDias = null, indDetDia = '', indSoNao = false, indCobNaoLista = [];
       const COB_SIGLAS = ['PP', 'PP.PE', 'BO.AT', 'EXP.AT', 'INB.AT', 'REC.AT', 'OP.AT'];
       const COB_CURTO = { ini1: '1º início', fim1: '1º final', ini2: '2º início', fim2: '2º final', ini: 'Início', fim: 'Final', dia: 'Dia' };
       const COB_DIA = [{ id: 'dia', nome: 'Inventário do dia' }];
@@ -3271,8 +3271,10 @@
         const porDia = new Map(chave.map(d => [d.nome, diarioInvsPorDia(d)]));
         const just = typeof diarioJustLista === 'function' ? diarioJustLista() : [];
         const tot = new Map([...chave, ...outros].map(d => [d.nome, { feitos: 0, esperados: 0, div: 0 }]));
-        const G = { feito: 0, div: 0, nao: 0, pend: 0 };
-        const TD = 'py-1.5 px-1 text-center border-l border-slate-100 align-middle';
+        const G = { feito: 0, div: 0, nao: 0, pend: 0, naoLista: [], soNao: indSoNao };
+        const TD0 = 'py-1.5 px-1 text-center align-middle', SEP = ' border-l-2 border-l-slate-400', SEPF = ' border-l border-l-slate-300';
+        let tdIni = true;   // a próxima célula é a 1ª coluna de um depósito (linha forte separando os depósitos)
+        const tdCls = () => { const c = TD0 + (tdIni ? SEP : SEPF); tdIni = false; return c; };
         // célula com inventário(s): verde = sem divergência, laranja = com divergência
         const celFeita = (dep, y, rotulo, invs, span, conta) => {
           const t = tot.get(dep.nome), n = invs.reduce((s, i) => s + cobDivQtd(i), 0), visto = invs.every(i => vistos[i.id]);
@@ -3282,42 +3284,46 @@
           const quem = [...new Set(invs.map(cobQuem).filter(Boolean))].join(', ');
           const tip = `${rotulo} — ${invs.length === 1 ? 'feito às ' + hora : invs.length + ' inventários'}${quem ? ' por ' + quem : ''}${n ? ' · ' + n + ' divergência(s)' : ' · sem divergência'}${visto ? ' · já visto' : ''}. Clique para ver o inventário.`;
           const sel = indDepSel === dep.nome && indDetDia === y;
-          return `<td${span > 1 ? ` colspan="${span}"` : ''} class="${TD}"><button onclick="indCobAbrir('${y}', '${dpJs(dep.nome)}')" data-cob="${escHtml((diarioSigla(dep) || dep.nome) + '|' + y + '|' + rotulo)}" data-st="${n ? 'div' : 'feito'}" title="${escHtml(tip)}"
+          return `<td${span > 1 ? ` colspan="${span}"` : ''} class="${tdCls()}${G.soNao ? ' opacity-25' : ''}"><button onclick="indCobAbrir('${y}', '${dpJs(dep.nome)}')" data-cob="${escHtml((diarioSigla(dep) || dep.nome) + '|' + y + '|' + rotulo)}" data-st="${n ? 'div' : 'feito'}" title="${escHtml(tip)}"
             class="w-full rounded-md ${n ? 'bg-orange-100 text-orange-800 hover:bg-orange-200' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'} ${sel ? 'ring-2 ring-tbx-navy' : ''} text-[11px] font-bold py-1 leading-tight">
             <i class="fa-solid ${n ? 'fa-triangle-exclamation' : 'fa-check'}"></i> ${hora}${n ? `<span class="block text-[10px]">${n} div.</span>` : ''}</button></td>`;
         };
         const celVazia = (dep, y, fds, slot, span) => {
-          const t = tot.get(dep.nome), sp = span > 1 ? ` colspan="${span}"` : '', id = escHtml((diarioSigla(dep) || dep.nome) + '|' + y + '|' + slot.id);
+          const t = tot.get(dep.nome), sp = span > 1 ? ` colspan="${span}"` : '', id = escHtml((diarioSigla(dep) || dep.nome) + '|' + y + '|' + slot.id), TD = tdCls();
           if (fds) return `<td${sp} class="${TD} text-[11px] text-slate-300">—</td>`;
           if (y > hoje) return `<td${sp} data-cob="${id}" data-st="futuro" class="${TD} text-[11px] text-slate-300">—</td>`;
-          if (y === hoje) { G.pend++; return `<td${sp} class="${TD}"><span data-cob="${id}" data-st="pendente" title="${escHtml(slot.nome + ' — ainda não feito hoje')}" class="block rounded-md border border-dashed border-slate-300 text-slate-500 text-[11px] font-semibold py-1">pendente</span></td>`; }
+          if (y === hoje) { G.pend++; return `<td${sp} class="${TD}${G.soNao ? ' opacity-25' : ''}"><span data-cob="${id}" data-st="pendente" title="${escHtml(slot.nome + ' — ainda não feito hoje')}" class="block rounded-md border border-dashed border-slate-300 text-slate-500 text-[11px] font-semibold py-1">pendente</span></td>`; }
           t.esperados++; G.nao++;
           const j = just.find(x => x.id === `${diarioSigla(dep)}|${y}|${slot.id}`);
-          return `<td${sp} class="${TD}"><span data-cob="${id}" data-st="nao" title="${escHtml(slot.nome + ' — NÃO FEITO' + (j ? '. Justificativa: ' + j.texto : ' (sem justificativa)'))}" class="block rounded-md bg-rose-100 text-rose-700 text-[11px] font-bold py-1"><i class="fa-solid fa-xmark"></i> não feito${j ? ' <i class="fa-solid fa-comment-dots"></i>' : ''}</span></td>`;
+          G.naoLista.push({ y, dep, slot, j });
+          return `<td${sp} class="${TD}"><span data-cob="${id}" data-st="nao" title="${escHtml(dep.nome + ' · ' + slot.nome + ' — NÃO FEITO' + (j ? '. Justificativa: ' + j.texto : ' (sem justificativa)'))}" class="block rounded-md bg-rose-100 text-rose-700 text-base font-black leading-6">✕${j ? ' <i class="fa-solid fa-comment-dots text-[10px]"></i>' : ''}</span></td>`;
         };
         const linhas = dias.map(y => {
           const [a, m, d] = y.split('-').map(Number), dt = new Date(a, m - 1, d), fds = dt.getDay() === 0 || dt.getDay() === 6, sem = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
           const cels = chave.map(dep => {
             const cols = cobCols(dep), slots = cobSlots(dep, y), pd = porDia.get(dep.nome), doDia = pd.get(y) || [];
+            tdIni = true;
             if (!cobEhDiario(dep)) return doDia.length ? celFeita(dep, y, 'Dia', doDia, cols.length, !fds && y <= hoje) : celVazia(dep, y, fds, COB_DIA[0], cols.length);
-            if (!slots.length) return `<td colspan="${cols.length}" class="${TD} text-[11px] text-slate-300">fora da regra</td>`;
+            tdIni = true;
+            if (!slots.length) return `<td colspan="${cols.length}" class="${tdCls()} text-[11px] text-slate-300">fora da regra</td>`;
             const oc = diarioOcupacao(dep, y, pd), usados = new Set(Object.values(oc).map(i => i.id)), extras = doDia.filter(i => !usados.has(i.id));
             let html = slots.length !== cols.length
               ? (oc[slots[0].id] ? celFeita(dep, y, slots[0].nome, [oc[slots[0].id]], cols.length, !fds && y <= hoje) : celVazia(dep, y, fds, slots[0], cols.length))
               : cols.map(c => oc[c.id] ? celFeita(dep, y, c.nome, [oc[c.id]], 1, !fds && y <= hoje) : celVazia(dep, y, fds, c, 1)).join('');
             if (extras.length) html = html.replace(/<\/td>$/, `<span class="block mt-0.5 text-[10px] text-slate-500" title="Inventário(s) fora dos turnos">+${extras.length} extra</span></td>`);
             return html;
-          }).join('') + outros.map(dep => { const l = cobInvsDoDia(dep.nome, y); return l.length ? celFeita(dep, y, 'Dia', l, 1, false) : `<td class="${TD} text-[11px] text-slate-300">—</td>`; }).join('');
+          }).join('') + outros.map((dep, n) => { tdIni = n === 0; const l = cobInvsDoDia(dep.nome, y); return l.length ? celFeita(dep, y, 'Dia', l, 1, false) : `<td class="${tdCls()} text-[11px] text-slate-300">—</td>`; }).join('');
           return `<tr class="${y === hoje ? 'bg-amber-50/40' : fds ? 'bg-slate-50' : 'bg-white'}"><td class="py-1.5 px-3 whitespace-nowrap text-xs font-semibold text-slate-700 sticky left-0 bg-inherit">${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')} <span class="font-normal text-slate-400">${sem}</span></td>${cels}</tr>`;
         }).join('');
         const todos = [...chave, ...outros];
-        const cab1 = chave.map(dep => `<th colspan="${cobCols(dep).length}" class="py-2 px-2 text-center border-l border-blue-100 text-slate-700 normal-case">${escHtml(dep.nome)} <span class="font-mono text-[10px] text-slate-400">${escHtml(dep.sigla || '')}</span></th>`).join('')
-          + (outros.length ? `<th colspan="${outros.length}" class="py-2 px-2 text-center border-l border-blue-100 text-slate-500 normal-case">Outros depósitos</th>` : '');
-        const cab2 = chave.map(dep => cobCols(dep).map((c, n) => `<th class="py-1.5 px-1 text-center text-[10px] font-semibold text-slate-500 normal-case whitespace-nowrap ${n === 0 ? 'border-l border-blue-100' : ''}" title="${escHtml(c.nome)}">${COB_CURTO[c.id] || escHtml(c.nome)}</th>`).join('')).join('')
-          + outros.map((dep, n) => `<th class="py-1.5 px-1 text-center text-[10px] font-semibold text-slate-600 normal-case whitespace-nowrap ${n === 0 ? 'border-l border-blue-100' : ''}">${escHtml(dep.nome)}</th>`).join('');
+        const cab1 = chave.map(dep => `<th colspan="${cobCols(dep).length}" class="py-2 px-2 text-center border-l-2 border-l-slate-400 text-slate-800 normal-case">${escHtml(dep.nome)} <span class="font-mono text-[10px] text-slate-400">${escHtml(dep.sigla || '')}</span></th>`).join('')
+          + (outros.length ? `<th colspan="${outros.length}" class="py-2 px-2 text-center border-l-2 border-l-slate-400 text-slate-500 normal-case">Outros depósitos</th>` : '');
+        const cab2 = chave.map(dep => cobCols(dep).map((c, n) => `<th class="py-1.5 px-1 text-center text-[10px] font-semibold text-slate-500 normal-case whitespace-nowrap ${n === 0 ? 'border-l-2 border-l-slate-400' : 'border-l border-l-slate-300'}" title="${escHtml(c.nome)}">${COB_CURTO[c.id] || escHtml(c.nome)}</th>`).join('')).join('')
+          + outros.map((dep, n) => `<th class="py-1.5 px-1 text-center text-[10px] font-semibold text-slate-600 normal-case whitespace-nowrap ${n === 0 ? 'border-l-2 border-l-slate-400' : 'border-l border-l-slate-300'}">${escHtml(dep.nome)}</th>`).join('');
         const rod = todos.map(dep => { const t = tot.get(dep.nome), ehOutro = !nomesChave.has(dep.nome), p = t.esperados ? Math.round(t.feitos * 100 / t.esperados) : null;
           const txt = ehOutro ? '' : `${t.feitos} de ${t.esperados}${p === null ? '' : ` · ${p}%`}`;
-          return `<td colspan="${ehOutro ? 1 : cobCols(dep).length}" data-cob-total="${escHtml(diarioSigla(dep) || dep.nome)}" class="py-2 px-2 text-center border-l border-blue-100 text-xs font-bold ${ehOutro || p === null ? 'text-slate-500' : p === 100 ? 'text-emerald-700' : 'text-rose-700'}">${txt}${t.div ? `<span class="block text-[10px] text-orange-700">${t.div} com divergência</span>` : ''}</td>`; }).join('');
+          return `<td colspan="${ehOutro ? 1 : cobCols(dep).length}" data-cob-total="${escHtml(diarioSigla(dep) || dep.nome)}" class="py-2 px-2 text-center ${dep === outros[0] || !ehOutro ? 'border-l-2 border-l-slate-400' : 'border-l border-l-slate-300'} text-xs font-bold ${ehOutro || p === null ? 'text-slate-500' : p === 100 ? 'text-emerald-700' : 'text-rose-700'}">${txt}${t.div ? `<span class="block text-[10px] text-orange-700">${t.div} com divergência</span>` : ''}</td>`; }).join('');
+        indCobNaoLista = G.naoLista;
         const chip = (n, txt, cls) => `<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold ${cls}">${n} <span class="font-semibold text-xs">${txt}</span></span>`;
         return `<div id="ind-cob" class="mt-4 bg-white rounded-xl border border-blue-100 shadow-sm p-4">
           <div class="flex flex-wrap items-center gap-2">
@@ -3339,7 +3345,7 @@
       window.indCobSo = function (v) { if (!cobDataOk(v)) return; indSetDia(v); };
       // clicar numa célula: tabela completa daquele depósito naquele dia, embaixo (marca como visto)
       window.indCobAbrir = function (y, nome) {
-        indSoDiv = false; indFeitosFiltroReset = true; indDetDia = y; indDepSel = nome;
+        indSoDiv = false; indSoNao = false; indFeitosFiltroReset = true; indDetDia = y; indDepSel = nome;
         const vistos = indLerVistos(), agora = new Date().toISOString(), por = indQuemVisto();
         cobInvsDoDia(nome, y).forEach(i => { if (!vistos[i.id]) vistos[i.id] = { por, em: agora }; });
         try { localStorage.setItem('tbx_inv_vistos', JSON.stringify(vistos)); } catch (e) {}
@@ -3407,15 +3413,27 @@
             <button onclick="indSetDia(indDiaRelGlobal(0))" class="px-3 py-2 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50">Hoje</button>
             <label class="inline-flex items-center gap-1.5 text-xs text-slate-500 ml-1" title="Para ver mais de um dia na mesma tabela">+ outra data <input type="date" id="cob-add" onchange="indCobAdd(this.value)" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"></label>
             <button onclick="indToggleDiv()" title="${indSoDiv ? 'Clique para voltar' : 'Lista todas as divergências das datas escolhidas, de todos os depósitos'}" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoDiv ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 ring-2 ring-offset-1 ring-rose-300' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid ${indSoDiv ? 'fa-filter-circle-xmark' : 'fa-triangle-exclamation'} mr-1.5"></i>${indSoDiv ? 'Lista de divergências: aberta (clique para fechar)' : 'Lista de divergências'}</button>
+            <button onclick="indToggleNao()" data-btn-nao title="${indSoNao ? 'Clique para voltar' : 'Mostra só os não feitos das datas escolhidas'}" class="px-3 py-2 rounded-lg text-sm font-semibold border ${indSoNao ? 'bg-rose-700 text-white border-rose-700 ring-2 ring-offset-1 ring-rose-300' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}"><i class="fa-solid ${indSoNao ? 'fa-filter-circle-xmark' : 'fa-xmark'} mr-1.5"></i>${indSoNao ? 'Não feitos: filtrado (clique para tirar)' : 'Não feitos'}</button>
             ${chips ? `<div class="w-full flex flex-wrap items-center gap-1.5 pt-1"><span class="text-xs text-slate-500">Datas na tabela:</span>${chips}</div>` : ''}
           </div>
           ${indCobHtml()}
+          ${indSoNao ? indNaoListaHtml() : ''}
           ${tabela}</div>`;
         if (linhas !== null) { if (indFeitosFiltroReset) { indFeitosFiltroReset = false; xfIniciar('ind-feitos-tbody'); } else xfRefresh('ind-feitos-tbody'); }
       }
       window.indDiaRelGlobal = indDiaRel;
+      // Lista dos não feitos (das datas escolhidas): data, depósito, turno e justificativa
+      function indNaoListaHtml() {
+        const l = indCobNaoLista || [];
+        if (!l.length) return '<div id="ind-nao-lista" class="mt-5 bg-white rounded-xl border border-emerald-200 p-6 text-center text-sm text-emerald-700"><i class="fa-solid fa-circle-check mr-1"></i>Nenhum inventário deixou de ser feito nas datas escolhidas.</div>';
+        const lin = l.map(({ y, dep, slot, j }) => { const [a, m, d] = y.split('-');
+          return `<tr class="hover:bg-rose-50/50"><td class="py-2 px-3 text-sm whitespace-nowrap">${d}/${m}/${a}</td><td class="py-2 px-3 text-sm font-semibold text-slate-800">${escHtml(dep.nome)} <span class="font-mono text-[10px] text-slate-400">${escHtml(dep.sigla || '')}</span></td><td class="py-2 px-3 text-sm">${escHtml(slot.nome)}</td><td class="py-2 px-3 text-xs ${j ? 'text-slate-700' : 'italic text-rose-500'}">${j ? escHtml(j.texto) + (j.por ? ` <span class="text-slate-400">— ${escHtml(j.por)}</span>` : '') : 'Sem justificativa'}</td></tr>`; }).join('');
+        return `<div id="ind-nao-lista" class="mt-5"><h2 class="text-base font-bold text-slate-800 mb-3">Não feitos — ${l.length}</h2>
+          <div class="bg-white rounded-xl border border-rose-200 shadow-sm overflow-hidden"><table class="w-full text-left"><thead class="bg-rose-50 text-xs font-semibold uppercase text-rose-700"><tr><th class="py-2 px-3">Data</th><th class="py-2 px-3">Depósito</th><th class="py-2 px-3">Turno</th><th class="py-2 px-3">Justificativa</th></tr></thead><tbody class="divide-y divide-rose-50">${lin}</tbody></table></div></div>`;
+      }
+      window.indToggleNao = function () { indSoNao = !indSoNao; if (indSoNao) { indSoDiv = false; indDepSel = null; indDetDia = ''; } indFeitosRefaz(); };
       window.indFecharDet = function () { indSoDiv = false; indDepSel = null; indDetDia = ''; indFeitosRefaz(); };
-      window.indToggleDiv = function () { indSoDiv = !indSoDiv; indDepSel = null; indDetDia = ''; indFeitosFiltroReset = true; indFeitosRefaz(); };
+      window.indToggleDiv = function () { indSoNao = false; indSoDiv = !indSoDiv; indDepSel = null; indDetDia = ''; indFeitosFiltroReset = true; indFeitosRefaz(); };
       window.indSetDia = function (v) { if (!cobDataOk(v)) return; indDia = v; indCobDias = [v]; indDepSel = null; indDetDia = ''; indFeitosFiltroReset = true; indFeitosRefaz(); };
       window.indMoverDia = function (n) { const [a, m, d] = (indDia || indDiaRel(-1)).split('-').map(Number), dt = new Date(a, m - 1, d + n); indSetDia(indYmd(dt)); };
       window.indRefreshFeitos = function () { const s = $('sec-controle-inventario'), f = $('vis-feitos'); if (s && f && !s.classList.contains('hidden') && !f.classList.contains('hidden')) indFeitosRefaz(); };
